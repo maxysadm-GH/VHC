@@ -1,0 +1,244 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "Recurrence": {
+                "type": "Recurrence",
+                "recurrence": {"frequency": "Hour", "interval": 1},
+                "runtimeConfiguration": {"concurrency": {"runs": 1}}
+            }
+        },
+        "actions": {
+            "Init_Page": {
+                "type": "InitializeVariable",
+                "inputs": {"variables": [{"name": "currentPage", "type": "integer", "value": 1}]},
+                "runAfter": {}
+            },
+            "Init_TotalPages": {
+                "type": "InitializeVariable",
+                "inputs": {"variables": [{"name": "totalPages", "type": "integer", "value": 1}]},
+                "runAfter": {"Init_Page": ["Succeeded"]}
+            },
+            "Init_Cutoff": {
+                "type": "InitializeVariable",
+                "inputs": {"variables": [{"name": "cutoffTime", "type": "string", "value": "@{addHours(utcNow(), -24)}"}]},
+                "runAfter": {"Init_TotalPages": ["Succeeded"]}
+            },
+            "Hub_Chicago": {
+                "type": "Http",
+                "inputs": {"uri": "https://api.weatherapi.com/v1/forecast.json?key={{WEATHER_API_KEY}}&q=60618&days=3", "method": "GET"},
+                "runAfter": {"Init_Cutoff": ["Succeeded"]}
+            },
+            "Hub_Memphis": {
+                "type": "Http",
+                "inputs": {"uri": "https://api.weatherapi.com/v1/forecast.json?key={{WEATHER_API_KEY}}&q=38118&days=3", "method": "GET"},
+                "runAfter": {"Hub_Chicago": ["Succeeded", "Failed"]}
+            },
+            "Hub_Miami": {
+                "type": "Http",
+                "inputs": {"uri": "https://api.weatherapi.com/v1/forecast.json?key={{WEATHER_API_KEY}}&q=33142&days=3", "method": "GET"},
+                "runAfter": {"Hub_Memphis": ["Succeeded", "Failed"]}
+            },
+            "Hub_FortWorth": {
+                "type": "Http",
+                "inputs": {"uri": "https://api.weatherapi.com/v1/forecast.json?key={{WEATHER_API_KEY}}&q=76177&days=3", "method": "GET"},
+                "runAfter": {"Hub_Miami": ["Succeeded", "Failed"]}
+            },
+            "Hub_Oakland": {
+                "type": "Http",
+                "inputs": {"uri": "https://api.weatherapi.com/v1/forecast.json?key={{WEATHER_API_KEY}}&q=94621&days=3", "method": "GET"},
+                "runAfter": {"Hub_FortWorth": ["Succeeded", "Failed"]}
+            },
+            "HubTemps": {
+                "type": "Compose",
+                "inputs": {
+                    "chicago": "@float(coalesce(body('Hub_Chicago')?['forecast']?['forecastday']?[0]?['day']?['maxtemp_f'], 50))",
+                    "memphis": "@float(coalesce(body('Hub_Memphis')?['forecast']?['forecastday']?[0]?['day']?['maxtemp_f'], 50))",
+                    "miami": "@float(coalesce(body('Hub_Miami')?['forecast']?['forecastday']?[0]?['day']?['maxtemp_f'], 75))",
+                    "fortworth": "@float(coalesce(body('Hub_FortWorth')?['forecast']?['forecastday']?[0]?['day']?['maxtemp_f'], 60))",
+                    "oakland": "@float(coalesce(body('Hub_Oakland')?['forecast']?['forecastday']?[0]?['day']?['maxtemp_f'], 60))"
+                },
+                "runAfter": {"Hub_Oakland": ["Succeeded", "Failed"]}
+            },
+            "Until_Done": {
+                "type": "Until",
+                "expression": "@greater(variables('currentPage'), variables('totalPages'))",
+                "limit": {"count": 10, "timeout": "PT1H"},
+                "actions": {
+                    "Get_Orders": {
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "https://ssapi.shipstation.com/orders?orderStatus=awaiting_shipment&pageSize=500&storeId=273669&page=@{variables('currentPage')}&sortBy=CreateDate&sortDir=DESC",
+                            "method": "GET",
+                            "headers": {
+                                "Authorization": "Basic {{SHIPSTATION_AUTH}}",
+                                "x-partner": "{{SHIPSTATION_XPARTNER}}"
+                            }
+                        }
+                    },
+                    "Parse": {
+                        "type": "ParseJson",
+                        "inputs": {
+                            "content": "@body('Get_Orders')",
+                            "schema": {"type": "object", "properties": {"orders": {"type": "array"}, "pages": {"type": "integer"}}}
+                        },
+                        "runAfter": {"Get_Orders": ["Succeeded"]}
+                    },
+                    "Set_Pages": {
+                        "type": "SetVariable",
+                        "inputs": {"name": "totalPages", "value": "@body('Parse')?['pages']"},
+                        "runAfter": {"Parse": ["Succeeded"]}
+                    },
+                    "Filter_Empty": {
+                        "type": "Query",
+                        "inputs": {
+                            "from": "@body('Parse')?['orders']",
+                            "where": "@equals(coalesce(item()?['advancedOptions']?['customField3'], ''), '')"
+                        },
+                        "runAfter": {"Set_Pages": ["Succeeded"]}
+                    },
+                    "Filter_HasCF3": {
+                        "type": "Query",
+                        "inputs": {
+                            "from": "@body('Parse')?['orders']",
+                            "where": "@not(equals(coalesce(item()?['advancedOptions']?['customField3'], ''), ''))"
+                        },
+                        "runAfter": {"Filter_Empty": ["Succeeded"]}
+                    },
+                    "Process_Empty": {
+                        "type": "Foreach",
+                        "foreach": "@body('Filter_Empty')",
+                        "actions": {
+                            "E_ZIP": {"type": "Compose", "inputs": "@if(greaterOrEquals(length(coalesce(items('Process_Empty')?['shipTo']?['postalCode'], '')), 5), substring(items('Process_Empty')?['shipTo']?['postalCode'], 0, 5), '00000')"},
+                            "E_ZIP3": {"type": "Compose", "inputs": "@substring(outputs('E_ZIP'), 0, 3)", "runAfter": {"E_ZIP": ["Succeeded"]}},
+                            "E_ZIP1": {"type": "Compose", "inputs": "@substring(outputs('E_ZIP'), 0, 1)", "runAfter": {"E_ZIP3": ["Succeeded"]}},
+                            "E_Transit": {"type": "Compose", "inputs": "@if(contains(toLower(coalesce(items('Process_Empty')['serviceCode'], 'std')), '2'), 2, if(contains(toLower(coalesce(items('Process_Empty')['serviceCode'], 'std')), 'overnight'), 1, if(contains(toLower(coalesce(items('Process_Empty')['serviceCode'], 'std')), 'ground'), 5, 3)))", "runAfter": {"E_ZIP1": ["Succeeded"]}},
+                            "E_Arrival": {"type": "Compose", "inputs": "@addDays(utcNow(), outputs('E_Transit'))", "runAfter": {"E_Transit": ["Succeeded"]}},
+                            "E_Weather": {
+                                "type": "Http",
+                                "inputs": {"uri": "https://api.weatherapi.com/v1/forecast.json?key={{WEATHER_API_KEY}}&q=@{outputs('E_ZIP')}&days=3", "method": "GET"},
+                                "runAfter": {"E_Arrival": ["Succeeded"]}
+                            },
+                            "E_DestTemp": {"type": "Compose", "inputs": "@float(coalesce(body('E_Weather')?['forecast']?['forecastday']?[0]?['day']?['maxtemp_f'], 50))", "runAfter": {"E_Weather": ["Succeeded", "Failed"]}},
+                            "E_Route": {"type": "Compose", "inputs": "@if(or(startsWith(outputs('E_ZIP3'), '32'), startsWith(outputs('E_ZIP3'), '33'), startsWith(outputs('E_ZIP3'), '34')), 'FL', if(equals(outputs('E_ZIP1'), '9'), 'WC', if(equals(outputs('E_ZIP1'), '7'), 'SW', if(or(equals(outputs('E_ZIP1'), '5'), equals(outputs('E_ZIP1'), '6')), 'MW', 'STD'))))", "runAfter": {"E_DestTemp": ["Succeeded"]}},
+                            "E_HubMax": {"type": "Compose", "inputs": "@coalesce(if(equals(outputs('E_Route'), 'FL'), outputs('HubTemps')?['miami'], if(equals(outputs('E_Route'), 'WC'), outputs('HubTemps')?['oakland'], if(equals(outputs('E_Route'), 'SW'), outputs('HubTemps')?['fortworth'], outputs('HubTemps')?['chicago']))), 50)", "runAfter": {"E_Route": ["Succeeded"]}},
+                            "E_MaxTemp": {"type": "Compose", "inputs": "@if(greaterOrEquals(coalesce(outputs('E_HubMax'), 50), coalesce(outputs('E_DestTemp'), 50)), coalesce(outputs('E_HubMax'), 50), coalesce(outputs('E_DestTemp'), 50))", "runAfter": {"E_HubMax": ["Succeeded"]}},
+                            "E_Ice": {"type": "Compose", "inputs": "@if(less(coalesce(outputs('E_MaxTemp'), 50), 65), 'NO-ICE', if(greater(coalesce(outputs('E_MaxTemp'), 50), 93), 'OP-ICE-180', if(greater(coalesce(outputs('E_MaxTemp'), 50), 84), 'OP-ICE-160', if(greater(coalesce(outputs('E_MaxTemp'), 50), 74), 'OP-ICE-140', 'OP-ICE-120'))))", "runAfter": {"E_MaxTemp": ["Succeeded"]}},
+                            "E_CF3": {"type": "Compose", "inputs": "@if(equals(outputs('E_Ice'), 'NO-ICE'), concat('NO ICE | ', formatDateTime(outputs('E_Arrival'), 'MM/dd'), ' ', string(div(coalesce(outputs('E_MaxTemp'), 50), 1)), 'F'), concat(replace(outputs('E_Ice'), 'OP-', ''), ' | ', formatDateTime(outputs('E_Arrival'), 'MM/dd'), ' ', string(div(coalesce(outputs('E_MaxTemp'), 50), 1)), 'F'))", "runAfter": {"E_Ice": ["Succeeded"]}},
+                            "E_Update": {
+                                "type": "Http",
+                                "inputs": {
+                                    "uri": "https://ssapi.shipstation.com/orders/createorder",
+                                    "method": "POST",
+                                    "headers": {"Authorization": "Basic {{SHIPSTATION_AUTH}}", "x-partner": "{{SHIPSTATION_XPARTNER}}", "Content-Type": "application/json"},
+                                    "body": {
+                                        "orderNumber": "@{items('Process_Empty')['orderNumber']}",
+                                        "orderKey": "@{items('Process_Empty')['orderKey']}",
+                                        "orderDate": "@{items('Process_Empty')['orderDate']}",
+                                        "orderStatus": "@{items('Process_Empty')['orderStatus']}",
+                                        "billTo": "@items('Process_Empty')['billTo']",
+                                        "shipTo": "@items('Process_Empty')['shipTo']",
+                                        "items": "@items('Process_Empty')['items']",
+                                        "advancedOptions": {"storeId": "@{coalesce(items('Process_Empty')?['advancedOptions']?['storeId'], null)}", "customField3": "@{outputs('E_CF3')}"}
+                                    }
+                                },
+                                "runAfter": {"E_CF3": ["Succeeded"]}
+                            },
+                            "E_Save": {
+                                "type": "Http",
+                                "inputs": {
+                                    "uri": "{{SUPABASE_URL}}/rest/v1/orders?on_conflict=shipstation_order_id",
+                                    "method": "POST",
+                                    "headers": {"apikey": "{{SUPABASE_ANON_KEY}}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"},
+                                    "body": {"shipstation_order_id": "@{string(items('Process_Empty')['orderId'])}", "order_number": "@{items('Process_Empty')['orderNumber']}", "route_max_temp": "@outputs('E_MaxTemp')", "ice_pack_type": "@{outputs('E_Ice')}", "last_weather_check": "@{utcNow()}"}
+                                },
+                                "runAfter": {"E_Update": ["Succeeded"]}
+                            }
+                        },
+                        "runAfter": {"Filter_HasCF3": ["Succeeded"]},
+                        "runtimeConfiguration": {"concurrency": {"repetitions": 20}}
+                    },
+                    "Process_Existing": {
+                        "type": "Foreach",
+                        "foreach": "@body('Filter_HasCF3')",
+                        "actions": {
+                            "X_Check": {
+                                "type": "Http",
+                                "inputs": {
+                                    "uri": "{{SUPABASE_URL}}/rest/v1/orders?shipstation_order_id=eq.@{items('Process_Existing')['orderId']}&select=last_weather_check",
+                                    "method": "GET",
+                                    "headers": {"apikey": "{{SUPABASE_ANON_KEY}}"}
+                                }
+                            },
+                            "X_Need": {"type": "Compose", "inputs": "@or(equals(length(body('X_Check')), 0), less(coalesce(first(body('X_Check'))?['last_weather_check'], '1900-01-01'), variables('cutoffTime')))", "runAfter": {"X_Check": ["Succeeded", "Failed"]}},
+                            "X_If": {
+                                "type": "If",
+                                "expression": {"and": [{"equals": ["@outputs('X_Need')", true]}]},
+                                "actions": {
+                                    "X_ZIP": {"type": "Compose", "inputs": "@if(greaterOrEquals(length(coalesce(items('Process_Existing')?['shipTo']?['postalCode'], '')), 5), substring(items('Process_Existing')?['shipTo']?['postalCode'], 0, 5), '00000')"},
+                                    "X_ZIP3": {"type": "Compose", "inputs": "@substring(outputs('X_ZIP'), 0, 3)", "runAfter": {"X_ZIP": ["Succeeded"]}},
+                                    "X_ZIP1": {"type": "Compose", "inputs": "@substring(outputs('X_ZIP'), 0, 1)", "runAfter": {"X_ZIP3": ["Succeeded"]}},
+                                    "X_Transit": {"type": "Compose", "inputs": "@if(contains(toLower(coalesce(items('Process_Existing')['serviceCode'], 'std')), '2'), 2, if(contains(toLower(coalesce(items('Process_Existing')['serviceCode'], 'std')), 'overnight'), 1, if(contains(toLower(coalesce(items('Process_Existing')['serviceCode'], 'std')), 'ground'), 5, 3)))", "runAfter": {"X_ZIP1": ["Succeeded"]}},
+                                    "X_Arrival": {"type": "Compose", "inputs": "@addDays(utcNow(), outputs('X_Transit'))", "runAfter": {"X_Transit": ["Succeeded"]}},
+                                    "X_Weather": {
+                                        "type": "Http",
+                                        "inputs": {"uri": "https://api.weatherapi.com/v1/forecast.json?key={{WEATHER_API_KEY}}&q=@{outputs('X_ZIP')}&days=3", "method": "GET"},
+                                        "runAfter": {"X_Arrival": ["Succeeded"]}
+                                    },
+                                    "X_DestTemp": {"type": "Compose", "inputs": "@float(coalesce(body('X_Weather')?['forecast']?['forecastday']?[0]?['day']?['maxtemp_f'], 50))", "runAfter": {"X_Weather": ["Succeeded", "Failed"]}},
+                                    "X_Route": {"type": "Compose", "inputs": "@if(or(startsWith(outputs('X_ZIP3'), '32'), startsWith(outputs('X_ZIP3'), '33'), startsWith(outputs('X_ZIP3'), '34')), 'FL', if(equals(outputs('X_ZIP1'), '9'), 'WC', if(equals(outputs('X_ZIP1'), '7'), 'SW', if(or(equals(outputs('X_ZIP1'), '5'), equals(outputs('X_ZIP1'), '6')), 'MW', 'STD'))))", "runAfter": {"X_DestTemp": ["Succeeded"]}},
+                                    "X_HubMax": {"type": "Compose", "inputs": "@coalesce(if(equals(outputs('X_Route'), 'FL'), outputs('HubTemps')?['miami'], if(equals(outputs('X_Route'), 'WC'), outputs('HubTemps')?['oakland'], if(equals(outputs('X_Route'), 'SW'), outputs('HubTemps')?['fortworth'], outputs('HubTemps')?['chicago']))), 50)", "runAfter": {"X_Route": ["Succeeded"]}},
+                                    "X_MaxTemp": {"type": "Compose", "inputs": "@if(greaterOrEquals(coalesce(outputs('X_HubMax'), 50), coalesce(outputs('X_DestTemp'), 50)), coalesce(outputs('X_HubMax'), 50), coalesce(outputs('X_DestTemp'), 50))", "runAfter": {"X_HubMax": ["Succeeded"]}},
+                                    "X_Ice": {"type": "Compose", "inputs": "@if(less(coalesce(outputs('X_MaxTemp'), 50), 65), 'NO-ICE', if(greater(coalesce(outputs('X_MaxTemp'), 50), 93), 'OP-ICE-180', if(greater(coalesce(outputs('X_MaxTemp'), 50), 84), 'OP-ICE-160', if(greater(coalesce(outputs('X_MaxTemp'), 50), 74), 'OP-ICE-140', 'OP-ICE-120'))))", "runAfter": {"X_MaxTemp": ["Succeeded"]}},
+                                    "X_CF3": {"type": "Compose", "inputs": "@if(equals(outputs('X_Ice'), 'NO-ICE'), concat('NO ICE | ', formatDateTime(outputs('X_Arrival'), 'MM/dd'), ' ', string(div(coalesce(outputs('X_MaxTemp'), 50), 1)), 'F'), concat(replace(outputs('X_Ice'), 'OP-', ''), ' | ', formatDateTime(outputs('X_Arrival'), 'MM/dd'), ' ', string(div(coalesce(outputs('X_MaxTemp'), 50), 1)), 'F'))", "runAfter": {"X_Ice": ["Succeeded"]}},
+                                    "X_Update": {
+                                        "type": "Http",
+                                        "inputs": {
+                                            "uri": "https://ssapi.shipstation.com/orders/createorder",
+                                            "method": "POST",
+                                            "headers": {"Authorization": "Basic {{SHIPSTATION_AUTH}}", "x-partner": "{{SHIPSTATION_XPARTNER}}", "Content-Type": "application/json"},
+                                            "body": {
+                                                "orderNumber": "@{items('Process_Existing')['orderNumber']}",
+                                                "orderKey": "@{items('Process_Existing')['orderKey']}",
+                                                "orderDate": "@{items('Process_Existing')['orderDate']}",
+                                                "orderStatus": "@{items('Process_Existing')['orderStatus']}",
+                                                "billTo": "@items('Process_Existing')['billTo']",
+                                                "shipTo": "@items('Process_Existing')['shipTo']",
+                                                "items": "@items('Process_Existing')['items']",
+                                                "advancedOptions": {"storeId": "@{coalesce(items('Process_Existing')?['advancedOptions']?['storeId'], null)}", "customField3": "@{outputs('X_CF3')}"}
+                                            }
+                                        },
+                                        "runAfter": {"X_CF3": ["Succeeded"]}
+                                    },
+                                    "X_Save": {
+                                        "type": "Http",
+                                        "inputs": {
+                                            "uri": "{{SUPABASE_URL}}/rest/v1/orders?on_conflict=shipstation_order_id",
+                                            "method": "POST",
+                                            "headers": {"apikey": "{{SUPABASE_ANON_KEY}}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"},
+                                            "body": {"shipstation_order_id": "@{string(items('Process_Existing')['orderId'])}", "order_number": "@{items('Process_Existing')['orderNumber']}", "route_max_temp": "@outputs('X_MaxTemp')", "ice_pack_type": "@{outputs('X_Ice')}", "last_weather_check": "@{utcNow()}"}
+                                        },
+                                        "runAfter": {"X_Update": ["Succeeded"]}
+                                    }
+                                },
+                                "else": {"actions": {}},
+                                "runAfter": {"X_Need": ["Succeeded"]}
+                            }
+                        },
+                        "runAfter": {"Process_Empty": ["Succeeded", "Failed"]},
+                        "runtimeConfiguration": {"concurrency": {"repetitions": 20}}
+                    },
+                    "Next_Page": {
+                        "type": "IncrementVariable",
+                        "inputs": {"name": "currentPage", "value": 1},
+                        "runAfter": {"Process_Existing": ["Succeeded", "Failed"]}
+                    }
+                },
+                "runAfter": {"HubTemps": ["Succeeded"]}
+            }
+        },
+        "parameters": {"$connections": {"type": "Object", "defaultValue": {}}}
+    },
+    "parameters": {"$connections": {"type": "Object", "value": {}}}
+}

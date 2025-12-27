@@ -1,0 +1,158 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "Recurrence": {
+                "type": "Recurrence",
+                "recurrence": {
+                    "frequency": "Minute",
+                    "interval": 30
+                }
+            }
+        },
+        "actions": {
+            "Init_Processed": {
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "Processed",
+                            "type": "integer",
+                            "value": 0
+                        }
+                    ]
+                },
+                "runAfter": {}
+            },
+            "Init_Skipped": {
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "Skipped",
+                            "type": "integer",
+                            "value": 0
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "Init_Processed": ["Succeeded"]
+                }
+            },
+            "Get_Orders": {
+                "type": "Http",
+                "inputs": {
+                    "uri": "https://ssapi.shipstation.com/orders?orderStatus=awaiting_shipment&storeId=273669&pageSize=500&sortBy=ModifyDate&sortDir=DESC",
+                    "method": "GET",
+                    "headers": {
+                        "Authorization": "Basic {{SHIPSTATION_AUTH}}"
+                    }
+                },
+                "runAfter": {
+                    "Init_Skipped": ["Succeeded"]
+                }
+            },
+            "For_Each": {
+                "type": "Foreach",
+                "foreach": "@body('Get_Orders')?['orders']",
+                "actions": {
+                    "Check": {
+                        "type": "If",
+                        "expression": {
+                            "and": [
+                                {
+                                    "startsWith": ["@items('For_Each')?['orderNumber']", "VHC"]
+                                },
+                                {
+                                    "greaterOrEquals": [
+                                        "@length(coalesce(items('For_Each')?['advancedOptions']?['customField1'], ''))",
+                                        10
+                                    ]
+                                },
+                                {
+                                    "equals": [
+                                        "@substring(coalesce(items('For_Each')?['advancedOptions']?['customField1'], '0000000000'), 2, 1)",
+                                        "-"
+                                    ]
+                                },
+                                {
+                                    "equals": [
+                                        "@substring(coalesce(items('For_Each')?['advancedOptions']?['customField1'], '0000000000'), 5, 1)",
+                                        "-"
+                                    ]
+                                },
+                                {
+                                    "or": [
+                                        {"equals": ["@items('For_Each')?['shipByDate']", null]},
+                                        {"equals": ["@coalesce(items('For_Each')?['shipByDate'], '')", ""]}
+                                    ]
+                                }
+                            ]
+                        },
+                        "actions": {
+                            "Parse": {
+                                "type": "Compose",
+                                "inputs": "@concat(substring(items('For_Each')?['advancedOptions']?['customField1'], 6, 4), '-', substring(items('For_Each')?['advancedOptions']?['customField1'], 0, 2), '-', substring(items('For_Each')?['advancedOptions']?['customField1'], 3, 2), 'T00:00:00.0000000')"
+                            },
+                            "Delay": {
+                                "type": "Wait",
+                                "inputs": {"interval": {"count": 3, "unit": "Second"}},
+                                "runAfter": {"Parse": ["Succeeded"]}
+                            },
+                            "Update": {
+                                "type": "Http",
+                                "inputs": {
+                                    "uri": "https://ssapi.shipstation.com/orders/createorder",
+                                    "method": "POST",
+                                    "headers": {
+                                        "Authorization": "Basic {{SHIPSTATION_AUTH}}",
+                                        "Content-Type": "application/json"
+                                    },
+                                    "body": {
+                                        "orderId": "@items('For_Each')?['orderId']",
+                                        "orderNumber": "@items('For_Each')?['orderNumber']",
+                                        "orderKey": "@items('For_Each')?['orderKey']",
+                                        "orderDate": "@items('For_Each')?['orderDate']",
+                                        "orderStatus": "@items('For_Each')?['orderStatus']",
+                                        "customerUsername": "@items('For_Each')?['customerUsername']",
+                                        "customerEmail": "@items('For_Each')?['customerEmail']",
+                                        "billTo": "@items('For_Each')?['billTo']",
+                                        "shipTo": "@items('For_Each')?['shipTo']",
+                                        "items": "@items('For_Each')?['items']",
+                                        "weight": "@items('For_Each')?['weight']",
+                                        "dimensions": "@items('For_Each')?['dimensions']",
+                                        "insuranceOptions": "@items('For_Each')?['insuranceOptions']",
+                                        "internationalOptions": "@items('For_Each')?['internationalOptions']",
+                                        "advancedOptions": "@items('For_Each')?['advancedOptions']",
+                                        "tagIds": "@items('For_Each')?['tagIds']",
+                                        "shipByDate": "@outputs('Parse')",
+                                        "giftMessage": "@if(not(empty(items('For_Each')?['giftMessage'])), items('For_Each')?['giftMessage'], if(not(empty(items('For_Each')?['customerNotes'])), items('For_Each')?['customerNotes'], null))"
+                                    }
+                                },
+                                "runAfter": {"Delay": ["Succeeded"]}
+                            },
+                            "Inc_Processed": {
+                                "type": "IncrementVariable",
+                                "inputs": {"name": "Processed", "value": 1},
+                                "runAfter": {"Update": ["Succeeded"]}
+                            }
+                        },
+                        "else": {
+                            "actions": {
+                                "Inc_Skipped": {
+                                    "type": "IncrementVariable",
+                                    "inputs": {"name": "Skipped", "value": 1}
+                                }
+                            }
+                        }
+                    }
+                },
+                "runAfter": {"Get_Orders": ["Succeeded"]},
+                "runtimeConfiguration": {"concurrency": {"repetitions": 1}}
+            }
+        },
+        "parameters": {"$connections": {"type": "Object", "defaultValue": {}}}
+    },
+    "parameters": {"$connections": {"type": "Object", "value": {}}}
+}
