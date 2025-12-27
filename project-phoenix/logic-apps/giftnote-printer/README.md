@@ -1,18 +1,25 @@
 # GiftNote-Printer Logic App
 
-## ⚠️ NOTE: This is the Gift Note PRINTER, NOT the Gift Note Cleanup App
-This Logic App prints gift notes when triggered by a warehouse scanner. It does NOT clean up "Dispatch Date:" metadata pollution from gift messages.
+## 🚧 PHASE 2 - Project Phoenix
+
+This Logic App is part of **Phase 2** of Project Phoenix. It removes gift note collation from the picking/packing process and moves gift note printing to the END of the fulfillment flow.
+
+### Phase 2 Vision
+- **Current State:** Gift notes printed during collation, slowing down pickers
+- **Future State:** Gift notes print AFTER shipping label, triggered by label webhook
+- **Benefit:** Packers/shippers handle gift notes at final station, streamlining flow
 
 ## Purpose
-Generates and prints gift note cards when warehouse staff scan an order's LPN (License Plate Number / Order Number). Triggered via HTTP webhook from handheld scanners.
+Generates and prints gift note cards when triggered. Designed to be called via webhook when a shipping label is created, so gift notes print alongside labels at the packing/shipping station.
 
 ## Trigger
 - **Type:** HTTP Request (Webhook)
 - **Schema:** `{ "lpn": "string", "stationId": "string" }`
 - **Required:** `lpn` (order number)
+- **Future Integration:** Webhook from ShipStation label creation
 
 ## Logic Flow
-1. Extract order number from scanner input (LPN)
+1. Extract order number from webhook input (LPN)
 2. Validate LPN is not empty
 3. Fetch order from ShipStation API
 4. Generate gift note HTML with:
@@ -83,16 +90,23 @@ Table: `gift_notes`
 
 ## Credentials Required
 - `{{SHIPSTATION_AUTH}}` - Base64 encoded API key:secret
+- `{{SERVICEBUS_PRINTSERVER_URL}}` - Service Bus endpoint
 - `{{SERVICEBUS_SAS}}` - Service Bus Shared Access Signature
-- `{{SUPABASE_SERVICE_ROLE_KEY}}` - Supabase service role key (not anon)
+- `{{SUPABASE_URL}}` - Supabase project URL
+- `{{SUPABASE_SERVICE_ROLE_KEY}}` - Supabase service role key
 
 ## Hardware Integration
-- **Scanner:** Sends HTTP POST with order number as LPN
-- **Printer:** Receives HTML via Azure Service Bus relay
+- **Trigger:** ShipStation label creation webhook (Phase 2)
+- **Printer:** Thermal printer via Azure Service Bus relay
 - **Format:** 4x6 thermal label stock
+- **Location:** Packing/shipping station
 
-## Notes
-- Uses Service Bus for reliable printer communication
-- Logs to Supabase even if print fails (runAfter: Succeeded, Failed)
-- Recipient name falls back to "Friend" if not available
-- Gift message pulled from ShipStation giftMessage field
+## Phase 2 Implementation TODO
+- [ ] Configure ShipStation webhook for label creation
+- [ ] Map webhook payload to LPN format
+- [ ] Test printer relay at shipping station
+- [ ] Remove gift note from collation process
+- [ ] Train packers on new workflow
+
+## Related Apps
+- **shipstation-shipby** - Populates giftMessage field from customerNotes
