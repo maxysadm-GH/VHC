@@ -1,0 +1,178 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "Recurrence": {
+                "type": "Recurrence",
+                "recurrence": {"frequency": "Hour", "interval": 1},
+                "runtimeConfiguration": {"concurrency": {"runs": 1}}
+            }
+        },
+        "actions": {
+            "Init_Processed": {
+                "type": "InitializeVariable",
+                "inputs": {"variables": [{"name": "Processed", "type": "integer", "value": 0}]},
+                "runAfter": {}
+            },
+            "Init_CurrentPage": {
+                "type": "InitializeVariable",
+                "inputs": {"variables": [{"name": "CurrentPage", "type": "integer", "value": 1}]},
+                "runAfter": {"Init_Processed": ["Succeeded"]}
+            },
+            "Init_TotalPages": {
+                "type": "InitializeVariable",
+                "inputs": {"variables": [{"name": "TotalPages", "type": "integer", "value": 1}]},
+                "runAfter": {"Init_CurrentPage": ["Succeeded"]}
+            },
+            "Define_SKU_Mapping": {
+                "type": "Compose",
+                "inputs": {
+                    "TC-WILD-H25": {"NOICE": "14x14x4", "ICE-120": "14x14x4", "ICE-140": "14x14x4", "ICE-160": "14x14x6", "ICE-180": "14x14x6"},
+                    "CB-SP-BOX": {"NOICE": "14x10x3", "ICE-120": "12x12x4", "ICE-140": "14x14x4", "ICE-160": "14x14x6", "ICE-180": "14x14x6"},
+                    "GS-WREATH": {"NOICE": "12x12x12", "ICE-120": "10x10x10", "ICE-140": "18x10x8", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "CN-MUSH-NORDIC": {"NOICE": "10x8x6", "ICE-120": "10x10x10", "ICE-140": "10x10x10", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "TC-EXO-032": {"NOICE": "14x10x3", "ICE-120": "14x14x4", "ICE-140": "14x14x4", "ICE-160": "14x14x6", "ICE-180": "14x14x6"},
+                    "GS-BOX-ADV-FIL": {"NOICE": "12x12x4", "ICE-120": "14x14x6", "ICE-140": "14x14x6", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "GS-TOW-WILD": {"NOICE": "14x14x4", "ICE-120": "14x14x6", "ICE-140": "14x14x6", "ICE-160": "18x12x8", "ICE-180": "18x12x8"},
+                    "GS-GRATEFUL": {"NOICE": "12x12x12", "ICE-120": "14x14x6", "ICE-140": "14x14x6", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "GS-BOX-SMORE": {"NOICE": "12x12x4", "ICE-120": "14x14x6", "ICE-140": "14x14x6", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "GS-HAT-VHC": {"NOICE": "10x10x10", "ICE-120": "10x10x10", "ICE-140": "18x10x8", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "GS-TOW-COM": {"NOICE": "8x8x6", "ICE-120": "10x8x6", "ICE-140": "10x10x10", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "GS-TOW-WREATH": {"NOICE": "10x10x10", "ICE-120": "10x10x10", "ICE-140": "18x10x8", "ICE-160": "18x10x8", "ICE-180": "18x12x8"},
+                    "GS-ADVENT-12": {"NOICE": "14x14x4", "ICE-120": "14x14x6", "ICE-140": "14x14x6", "ICE-160": "18x12x8", "ICE-180": "18x12x8"},
+                    "GS-TOW-PET": {"NOICE": "8x8x6", "ICE-120": "8x8x6", "ICE-140": "10x8x6", "ICE-160": "14x14x4", "ICE-180": "14x14x6"},
+                    "GS-COCOA-FLIGHT": {"NOICE": "14x10x3", "ICE-120": "14x14x4", "ICE-140": "14x14x4", "ICE-160": "14x14x6", "ICE-180": "14x14x6"},
+                    "GS-BOX-CLA-PAR": {"NOICE": "16x16x6", "ICE-120": "16x16x6", "ICE-140": "16x16x6", "ICE-160": "18x18x6", "ICE-180": "18x18x8"},
+                    "GS-WINE-BAROLO": {"NOICE": "16x16x6", "ICE-120": "16x16x6", "ICE-140": "16x16x6", "ICE-160": "18x18x6", "ICE-180": "18x18x6"},
+                    "GS-WINE-PIPER": {"NOICE": "16x16x6", "ICE-120": "16x16x6", "ICE-140": "16x16x6", "ICE-160": "18x18x6", "ICE-180": "18x18x6"},
+                    "GS-TOW-GRA": {"NOICE": "10x8x6", "ICE-120": "10x10x10", "ICE-140": "10x10x10", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "GS-TOWER-GRA-H25": {"NOICE": "10x8x6", "ICE-120": "10x10x10", "ICE-140": "10x10x10", "ICE-160": "18x10x8", "ICE-180": "18x10x8"}
+                },
+                "runAfter": {"Init_TotalPages": ["Succeeded"]}
+            },
+            "Define_Box_Ice_Mapping": {
+                "type": "Compose",
+                "inputs": {
+                    "9x6x3": {"NOICE": "9x6x3", "ICE-120": "8x8x6", "ICE-140": "10x8x6", "ICE-160": "14x14x4", "ICE-180": "10x10x10"},
+                    "8x8x6": {"NOICE": "8x8x6", "ICE-120": "10x8x6", "ICE-140": "10x8x6", "ICE-160": "14x14x4", "ICE-180": "10x10x10"},
+                    "14x10x3": {"NOICE": "14x10x3", "ICE-120": "12x12x4", "ICE-140": "14x14x4", "ICE-160": "10x10x10", "ICE-180": "14x14x6"},
+                    "10x8x6": {"NOICE": "10x8x6", "ICE-120": "12x12x4", "ICE-140": "12x12x4", "ICE-160": "14x14x4", "ICE-180": "10x10x10"},
+                    "12x12x4": {"NOICE": "12x12x4", "ICE-120": "14x14x4", "ICE-140": "10x10x10", "ICE-160": "14x14x6", "ICE-180": "14x14x6"},
+                    "10x10x10": {"NOICE": "10x10x10", "ICE-120": "14x14x6", "ICE-140": "14x14x6", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "14x14x4": {"NOICE": "14x14x4", "ICE-120": "14x14x6", "ICE-140": "18x10x8", "ICE-160": "18x10x8", "ICE-180": "18x12x8"},
+                    "14x14x6": {"NOICE": "14x14x6", "ICE-120": "18x10x8", "ICE-140": "18x10x8", "ICE-160": "18x12x8", "ICE-180": "18x12x8"},
+                    "12x12x12": {"NOICE": "12x12x12", "ICE-120": "14x14x6", "ICE-140": "18x10x8", "ICE-160": "18x10x8", "ICE-180": "18x10x8"},
+                    "16x16x6": {"NOICE": "16x16x6", "ICE-120": "16x16x6", "ICE-140": "16x16x6", "ICE-160": "18x18x6", "ICE-180": "18x18x8"}
+                },
+                "runAfter": {"Define_SKU_Mapping": ["Succeeded"]}
+            },
+            "Page_Loop": {
+                "type": "Until",
+                "expression": "@greater(variables('CurrentPage'), variables('TotalPages'))",
+                "limit": {"count": 20, "timeout": "PT2H"},
+                "actions": {
+                    "Get_Orders": {
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "https://ssapi.shipstation.com/orders?orderStatus=awaiting_shipment&storeId=273669&pageSize=500&page=@{variables('CurrentPage')}&sortBy=ModifyDate&sortDir=DESC",
+                            "method": "GET",
+                            "headers": {"Authorization": "Basic {{SHIPSTATION_AUTH}}", "x-partner": "{{SHIPSTATION_XPARTNER}}"}
+                        }
+                    },
+                    "Set_TotalPages": {
+                        "type": "SetVariable",
+                        "inputs": {"name": "TotalPages", "value": "@body('Get_Orders')?['pages']"},
+                        "runAfter": {"Get_Orders": ["Succeeded"]}
+                    },
+                    "For_Each": {
+                        "type": "Foreach",
+                        "foreach": "@body('Get_Orders')?['orders']",
+                        "actions": {
+                            "Check_VHC_and_Empty_CF2": {
+                                "type": "If",
+                                "expression": {"and": [
+                                    {"startsWith": ["@items('For_Each')?['orderNumber']", "VHC"]},
+                                    {"equals": ["@coalesce(items('For_Each')?['advancedOptions']?['customField2'], '')", ""]}
+                                ]},
+                                "actions": {
+                                    "Extract_ShopifyId": {"type": "Compose", "inputs": "@first(split(coalesce(items('For_Each')?['orderKey'], ''), '-'))"},
+                                    "Extract_IceLevel": {"type": "Compose", "inputs": "@if(startsWith(first(split(coalesce(items('For_Each')?['advancedOptions']?['customField3'], 'NO ICE'), ' | ')), 'ICE-'), first(split(coalesce(items('For_Each')?['advancedOptions']?['customField3'], 'NO ICE'), ' | ')), 'NOICE')", "runAfter": {"Extract_ShopifyId": ["Succeeded"]}},
+                                    "Extract_FirstSKU": {"type": "Compose", "inputs": "@coalesce(items('For_Each')?['items']?[0]?['sku'], '')", "runAfter": {"Extract_IceLevel": ["Succeeded"]}},
+                                    "Check_Valid_ShopifyId": {
+                                        "type": "If",
+                                        "expression": {"and": [{"not": {"equals": ["@outputs('Extract_ShopifyId')", ""]}}]},
+                                        "actions": {
+                                            "Query_ShipperHQ": {
+                                                "type": "Http",
+                                                "inputs": {
+                                                    "uri": "https://ovs.shipperhq.com",
+                                                    "method": "POST",
+                                                    "headers": {"Content-Type": "application/json", "X-ShipperHQ-Access-Token": "{{SHIPPERHQ_ACCESS_TOKEN}}", "X-ShipperHQ-Scope": "LIVE"},
+                                                    "body": {"query": "{ viewOrder(orderNumber: \"@{outputs('Extract_ShopifyId')}\") { shipments { carriers { packages { packageDetail { packageName } } } } } }"}
+                                                }
+                                            },
+                                            "Parse_SHQ_Response": {
+                                                "type": "ParseJson",
+                                                "inputs": {"content": "@body('Query_ShipperHQ')", "schema": {"type": "object", "properties": {"data": {"type": "object", "properties": {"viewOrder": {"type": "array"}}}}}},
+                                                "runAfter": {"Query_ShipperHQ": ["Succeeded"]}
+                                            },
+                                            "Extract_SHQ_BoxName": {"type": "Compose", "inputs": "@coalesce(body('Parse_SHQ_Response')?['data']?['viewOrder']?[0]?['shipments']?[0]?['carriers']?[0]?['packages']?[0]?['packageDetail']?['packageName'], 'NO-DATA')", "runAfter": {"Parse_SHQ_Response": ["Succeeded"]}},
+                                            "Determine_FinalBox": {"type": "Compose", "inputs": "@coalesce(outputs('Define_SKU_Mapping')?[outputs('Extract_FirstSKU')]?[outputs('Extract_IceLevel')], outputs('Define_Box_Ice_Mapping')?[outputs('Extract_SHQ_BoxName')]?[outputs('Extract_IceLevel')], if(or(equals(outputs('Extract_SHQ_BoxName'), 'SHQ_CUSTOM'), equals(outputs('Extract_SHQ_BoxName'), 'CUSTOM')), 'CUSTOM', if(equals(outputs('Extract_SHQ_BoxName'), 'NO-DATA'), 'CUSTOM (ND)', outputs('Extract_SHQ_BoxName'))))", "runAfter": {"Extract_SHQ_BoxName": ["Succeeded"]}},
+                                            "Format_IceDisplay": {"type": "Compose", "inputs": "@if(equals(outputs('Extract_IceLevel'), 'NOICE'), '', concat(' | ', replace(outputs('Extract_IceLevel'), 'ICE-', 'ICE - ')))", "runAfter": {"Determine_FinalBox": ["Succeeded"]}},
+                                            "Format_BoxCode": {"type": "Compose", "inputs": "@concat('BOX | ', outputs('Determine_FinalBox'), outputs('Format_IceDisplay'))", "runAfter": {"Format_IceDisplay": ["Succeeded"]}},
+                                            "Update_SS_CF2": {
+                                                "type": "Http",
+                                                "inputs": {
+                                                    "uri": "https://ssapi.shipstation.com/orders/createorder",
+                                                    "method": "POST",
+                                                    "headers": {"Authorization": "Basic {{SHIPSTATION_AUTH}}", "Content-Type": "application/json", "x-partner": "{{SHIPSTATION_XPARTNER}}"},
+                                                    "body": {
+                                                        "orderId": "@items('For_Each')?['orderId']",
+                                                        "orderNumber": "@items('For_Each')?['orderNumber']",
+                                                        "orderKey": "@items('For_Each')?['orderKey']",
+                                                        "orderDate": "@items('For_Each')?['orderDate']",
+                                                        "orderStatus": "@items('For_Each')?['orderStatus']",
+                                                        "customerUsername": "@items('For_Each')?['customerUsername']",
+                                                        "customerEmail": "@items('For_Each')?['customerEmail']",
+                                                        "billTo": "@items('For_Each')?['billTo']",
+                                                        "shipTo": "@items('For_Each')?['shipTo']",
+                                                        "items": "@items('For_Each')?['items']",
+                                                        "weight": "@items('For_Each')?['weight']",
+                                                        "dimensions": "@items('For_Each')?['dimensions']",
+                                                        "insuranceOptions": "@items('For_Each')?['insuranceOptions']",
+                                                        "internationalOptions": "@items('For_Each')?['internationalOptions']",
+                                                        "advancedOptions": {
+                                                            "warehouseId": "@items('For_Each')?['advancedOptions']?['warehouseId']",
+                                                            "storeId": "@items('For_Each')?['advancedOptions']?['storeId']",
+                                                            "customField1": "@items('For_Each')?['advancedOptions']?['customField1']",
+                                                            "customField2": "@{outputs('Format_BoxCode')}",
+                                                            "customField3": "@items('For_Each')?['advancedOptions']?['customField3']"
+                                                        },
+                                                        "tagIds": "@items('For_Each')?['tagIds']"
+                                                    }
+                                                },
+                                                "runAfter": {"Format_BoxCode": ["Succeeded"]}
+                                            },
+                                            "Delay_RateLimit": {"type": "Wait", "inputs": {"interval": {"count": 1, "unit": "Second"}}, "runAfter": {"Update_SS_CF2": ["Succeeded"]}},
+                                            "Inc_Processed": {"type": "IncrementVariable", "inputs": {"name": "Processed", "value": 1}, "runAfter": {"Delay_RateLimit": ["Succeeded"]}}
+                                        },
+                                        "else": {"actions": {}},
+                                        "runAfter": {"Extract_FirstSKU": ["Succeeded"]}
+                                    }
+                                },
+                                "else": {"actions": {}}
+                            }
+                        },
+                        "runAfter": {"Set_TotalPages": ["Succeeded"]},
+                        "runtimeConfiguration": {"concurrency": {"repetitions": 1}}
+                    },
+                    "Increment_Page": {"type": "IncrementVariable", "inputs": {"name": "CurrentPage", "value": 1}, "runAfter": {"For_Each": ["Succeeded"]}}
+                },
+                "runAfter": {"Define_Box_Ice_Mapping": ["Succeeded"]}
+            }
+        },
+        "parameters": {"$connections": {"type": "Object", "defaultValue": {}}}
+    },
+    "parameters": {"$connections": {"type": "Object", "value": {}}}
+}

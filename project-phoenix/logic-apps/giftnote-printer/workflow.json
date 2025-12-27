@@ -1,0 +1,105 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "When_Scanner_Sends_LPN": {
+                "type": "Request",
+                "kind": "Http",
+                "inputs": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {"lpn": {"type": "string"}, "stationId": {"type": "string"}},
+                        "required": ["lpn"]
+                    }
+                }
+            }
+        },
+        "actions": {
+            "01_Extract_SO": {"type": "Compose", "inputs": "@triggerBody()?['lpn']", "runAfter": {}},
+            "Condition_Check_SO": {
+                "type": "If",
+                "expression": "@not(empty(outputs('01_Extract_SO')))",
+                "actions": {
+                    "02_Get_ShipStation_Order": {
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "https://ssapi.shipstation.com/orders?orderNumber=@{outputs('01_Extract_SO')}",
+                            "method": "GET",
+                            "headers": {"Authorization": "Basic {{SHIPSTATION_AUTH}}"}
+                        }
+                    },
+                    "03_Parse_ShipStation": {
+                        "type": "ParseJson",
+                        "inputs": {
+                            "content": "@body('02_Get_ShipStation_Order')",
+                            "schema": {"type": "object", "properties": {"orders": {"type": "array"}, "total": {"type": "integer"}}}
+                        },
+                        "runAfter": {"02_Get_ShipStation_Order": ["Succeeded"]}
+                    },
+                    "04_Generate_Gift_HTML": {
+                        "type": "Compose",
+                        "inputs": "<!DOCTYPE html><html><head><style>@page{size:4in 6in;margin:0.25in;}body{width:3.5in;padding:0.25in;font-family:Georgia,serif;font-size:14px;}.header{text-align:center;font-size:20px;margin-bottom:20px;font-weight:bold;}.message{font-size:16px;line-height:1.5;margin:20px 0;min-height:2in;}.footer{text-align:center;margin-top:30px;font-style:italic;}</style></head><body><div class='header'>A Gift For You</div><div>Dear @{coalesce(first(body('03_Parse_ShipStation')?['orders'])?['shipTo']?['name'], 'Friend')},</div><div class='message'>@{coalesce(first(body('03_Parse_ShipStation')?['orders'])?['giftMessage'], '')}</div><div class='footer'>With warm wishes</div></body></html>",
+                        "runAfter": {"03_Parse_ShipStation": ["Succeeded"]}
+                    },
+                    "05_Send_To_Printer": {
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "{{SERVICEBUS_PRINTSERVER_URL}}",
+                            "method": "POST",
+                            "headers": {"Content-Type": "application/json", "ServiceBusAuthorization": "{{SERVICEBUS_SAS}}"},
+                            "body": {"orderNumber": "@{outputs('01_Extract_SO')}", "html": "@{outputs('04_Generate_Gift_HTML')}"}
+                        },
+                        "runAfter": {"04_Generate_Gift_HTML": ["Succeeded"]}
+                    },
+                    "06_Save_Supabase": {
+                        "type": "Http",
+                        "inputs": {
+                            "uri": "{{SUPABASE_URL}}/rest/v1/gift_notes",
+                            "method": "POST",
+                            "headers": {
+                                "apikey": "{{SUPABASE_SERVICE_ROLE_KEY}}",
+                                "Authorization": "Bearer {{SUPABASE_SERVICE_ROLE_KEY}}",
+                                "Content-Type": "application/json"
+                            },
+                            "body": {
+                                "so": "@{outputs('01_Extract_SO')}",
+                                "message": "@{coalesce(first(body('03_Parse_ShipStation')?['orders'])?['giftMessage'], '')}",
+                                "message_hash": "temp_hash_@{outputs('01_Extract_SO')}",
+                                "status": "printed",
+                                "printed_at": "@{utcNow()}",
+                                "pdf_path": null
+                            }
+                        },
+                        "runAfter": {"05_Send_To_Printer": ["Succeeded", "Failed"]}
+                    },
+                    "07_Response": {
+                        "type": "Response",
+                        "inputs": {
+                            "statusCode": 200,
+                            "body": {
+                                "success": true,
+                                "so": "@{outputs('01_Extract_SO')}",
+                                "message": "Gift note printed successfully",
+                                "giftMessage": "@{coalesce(first(body('03_Parse_ShipStation')?['orders'])?['giftMessage'], '')}"
+                            }
+                        },
+                        "runAfter": {"06_Save_Supabase": ["Succeeded", "Failed"]}
+                    }
+                },
+                "else": {
+                    "actions": {
+                        "Response_Missing_LPN": {
+                            "type": "Response",
+                            "inputs": {"statusCode": 400, "body": {"error": "Missing 'lpn' in request body"}}
+                        }
+                    }
+                },
+                "runAfter": {"01_Extract_SO": ["Succeeded"]}
+            }
+        },
+        "outputs": {},
+        "parameters": {"$connections": {"type": "Object", "defaultValue": {}}}
+    },
+    "parameters": {"$connections": {"type": "Object", "value": {}}}
+}
