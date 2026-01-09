@@ -37,6 +37,8 @@ VHC/
 ├── scripts/               # Standalone scripts
 │   ├── powershell/        # PS1 scripts
 │   └── python/            # Python utilities
+├── tools/                 # Internal tools
+│   └── pricing-tool/      # B2B Pricing Calculator v3.5
 ├── docs/                  # Documentation
 └── templates/             # Reusable templates
 ```
@@ -86,6 +88,14 @@ Location: `shipstation/box-code/`
 - Integrates ShipperHQ Insights API
 - Calculates optimal box sizes
 - Writes to ShipStation Custom Field 2
+
+### B2B Pricing Tool
+Location: `tools/pricing-tool/`
+- Single-file HTML calculator with Supabase cloud sync
+- Smart HTML exports with privacy controls
+- What-If analysis and Goal Solver
+- Supports markup and margin pricing methods
+- Supabase project: szjkulsdattjabyqtxip
 
 ## Environment Variables
 

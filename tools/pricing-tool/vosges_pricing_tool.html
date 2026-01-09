@@ -1,0 +1,3160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vosges B2B Pricing Tool v3.5</title>
+    <!--
+    ╔══════════════════════════════════════════════════════════════════════════════╗
+    ║  VOSGES B2B PRICING TOOL                                                      ║
+    ║  Version: 3.5                                                                 ║
+    ║  Date: January 8, 2026                                                        ║
+    ║  Author: Max / Claude                                                         ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  CHANGELOG                                                                    ║
+    ╠══════════════════════════════════════════════════════════════════════════════╣
+    ║  v3.5 (2026-01-08)                                                           ║
+    ║    + Added: Supabase cloud sync (replaces localStorage)                      ║
+    ║    + Added: Smart HTML exports with privacy controls                         ║
+    ║    + Added: Interactive exports with What-If analysis                        ║
+    ║    + Added: Export modal with client/interactive options                     ║
+    ║    + Added: Cloud sync indicator (idle/syncing/error/offline)                ║
+    ║    ~ Changed: localStorage as fallback only (offline mode)                   ║
+    ║                                                                               ║
+    ║  v3.4 (2026-01-08)                                                           ║
+    ║    + Added: LocalStorage persistence (scenarios, ingredients, config)        ║
+    ║    + Added: Auto-save with debounce (2s delay)                               ║
+    ║    + Added: Export/Import full state as JSON                                 ║
+    ║    + Added: "Last saved" timestamp in footer                                 ║
+    ║    + Added: Reset to defaults option                                         ║
+    ║    + Added: Chat handles "most profitable", "rank by margin", etc.           ║
+    ║    + Added: Chat handles "cheapest", "highest cogs" queries                  ║
+    ║    ~ Fixed: Chat context more reliable across questions                      ║
+    ║                                                                               ║
+    ║  v3.3 (2026-01-08)                                                           ║
+    ║    + Added: Intelligent chat processor with intent detection                  ║
+    ║    + Added: Context memory (remembers last scenario discussed)               ║
+    ║    + Added: Natural language understanding for questions                      ║
+    ║    + Added: What-if modeling via chat ("what if price was $0.80?")           ║
+    ║    + Added: Definition lookups (margin, markup, COGS, SUP, ti/hi, BOM)       ║
+    ║    + Added: Comparison handler for multiple scenarios                         ║
+    ║    + Added: Why/How question handlers with detailed explanations             ║
+    ║                                                                               ║
+    ║  v3.2 (2026-01-08)                                                           ║
+    ║    + Added: Duplicate scenario functionality                                  ║
+    ║    + Added: Export scenario as standalone HTML (clean room for prospects)    ║
+    ║    + Added: Delete duplicated scenarios (originals protected)                ║
+    ║    + Added: New Scenario creation with template option                        ║
+    ║                                                                               ║
+    ║  v3.1 (2026-01-08)                                                           ║
+    ║    + Added: Labor Rates, Packaging, Pallet Specs config pages                ║
+    ║    + Added: Goal Solver                                                       ║
+    ║                                                                               ║
+    ║  v3.0 (2026-01-08)                                                           ║
+    ║    + Initial v3 with complete audit, dashboard, chat                         ║
+    ║    ! Finding: CHW/LSL/Dan use MARKUP mislabeled as "margin"                  ║
+    ╚══════════════════════════════════════════════════════════════════════════════╝
+    -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --dark: #0a0a12;
+            --card: #12121e;
+            --card-alt: #1a1a2a;
+            --border: rgba(255,255,255,0.06);
+            --gold: #d4a84b;
+            --accent: #6366f1;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--dark); color: #e0e0e0; font-size: 13px; line-height: 1.5; }
+        
+        .app { display: grid; grid-template-columns: 220px 1fr 360px; height: 100vh; }
+        
+        /* Sidebar */
+        .sidebar { background: rgba(0,0,0,0.3); border-right: 1px solid var(--border); padding: 1rem; overflow-y: auto; }
+        .logo { color: var(--gold); font-weight: 700; font-size: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+        .nav-group { margin-bottom: 1rem; }
+        .nav-title { color: #444; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem; padding-left: 0.5rem; }
+        .nav-item { padding: 0.45rem 0.6rem; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; transition: all 0.15s; }
+        .nav-item:hover { background: rgba(255,255,255,0.04); }
+        .nav-item.active { background: var(--accent); color: #fff; }
+        .nav-badge { margin-left: auto; background: rgba(255,255,255,0.1); padding: 0.1rem 0.35rem; border-radius: 8px; font-size: 0.65rem; }
+        
+        /* Main */
+        .main { padding: 1rem 1.25rem; overflow-y: auto; background: linear-gradient(180deg, var(--dark) 0%, #0d0d18 100%); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        h1 { font-size: 1.2rem; font-weight: 600; }
+        h2 { font-size: 0.95rem; color: var(--gold); margin: 1rem 0 0.5rem; font-weight: 600; }
+        
+        /* Chat Panel */
+        .chat { background: var(--card); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+        .chat-header { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); font-weight: 600; color: var(--gold); font-size: 0.85rem; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 0.75rem; }
+        .msg { margin-bottom: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 8px; font-size: 0.8rem; line-height: 1.6; }
+        .msg.user { background: var(--accent); margin-left: 1.5rem; }
+        .msg.bot { background: var(--card-alt); border: 1px solid var(--border); }
+        .msg.sys { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.15); font-size: 0.75rem; }
+        .msg code { background: rgba(0,0,0,0.3); padding: 0.1rem 0.3rem; border-radius: 3px; font-family: 'Consolas', monospace; font-size: 0.75rem; }
+        .msg ul { margin: 0.4rem 0 0 1rem; }
+        .msg li { margin-bottom: 0.2rem; }
+        .chat-input-wrap { padding: 0.75rem; border-top: 1px solid var(--border); }
+        .chat-input { width: 100%; padding: 0.6rem; border-radius: 6px; border: 1px solid var(--border); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.8rem; resize: none; }
+        .chat-input:focus { outline: none; border-color: var(--accent); }
+        
+        /* Cards */
+        .card { background: var(--card); border-radius: 8px; padding: 0.9rem; border: 1px solid var(--border); margin-bottom: 0.75rem; }
+        .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+        .card-title { font-weight: 600; color: var(--gold); font-size: 0.85rem; }
+        
+        /* Grid */
+        .grid { display: grid; gap: 0.75rem; }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-5 { grid-template-columns: repeat(5, 1fr); }
+        
+        /* Tables */
+        .tbl { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        .tbl th, .tbl td { padding: 0.4rem 0.5rem; text-align: left; border-bottom: 1px solid var(--border); }
+        .tbl th { color: #555; font-weight: 500; font-size: 0.65rem; text-transform: uppercase; }
+        .tbl tr:hover { background: rgba(255,255,255,0.02); }
+        .tbl input { background: rgba(0,0,0,0.3); border: 1px solid var(--border); color: #fff; padding: 0.3rem; border-radius: 3px; width: 65px; font-size: 0.75rem; }
+        
+        /* Tags */
+        .tag { display: inline-block; padding: 0.12rem 0.35rem; border-radius: 3px; font-size: 0.6rem; font-weight: 600; }
+        .tag-success { background: rgba(16,185,129,0.15); color: #10b981; }
+        .tag-warning { background: rgba(245,158,11,0.15); color: #f59e0b; }
+        .tag-danger { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .tag-info { background: rgba(99,102,241,0.15); color: #818cf8; }
+        .tag-purple { background: rgba(139,92,246,0.15); color: #a78bfa; }
+        
+        /* Metrics */
+        .metric { font-size: 1.5rem; font-weight: 700; }
+        .metric-sm { font-size: 1.1rem; font-weight: 700; }
+        .metric-xs { font-size: 0.95rem; font-weight: 600; }
+        .metric-label { font-size: 0.65rem; color: #555; margin-bottom: 0.15rem; }
+        .text-success { color: var(--success); }
+        .text-warning { color: var(--warning); }
+        .text-danger { color: var(--danger); }
+        .text-muted { color: #555; }
+        
+        /* Buttons */
+        .btn { padding: 0.4rem 0.8rem; border-radius: 5px; border: none; cursor: pointer; font-weight: 600; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.15s; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-primary:hover { background: #4f46e5; }
+        .btn-success { background: var(--success); color: #fff; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: #aaa; }
+        .btn-sm { padding: 0.3rem 0.5rem; font-size: 0.7rem; }
+        
+        /* Forms */
+        .form-group { margin-bottom: 0.5rem; }
+        .form-label { display: block; margin-bottom: 0.2rem; font-size: 0.7rem; color: #666; }
+        .form-input, .form-select { width: 100%; padding: 0.45rem; border-radius: 4px; border: 1px solid var(--border); background: rgba(0,0,0,0.3); color: #fff; font-size: 0.8rem; }
+        .form-input:focus { outline: none; border-color: var(--accent); }
+        .form-row { display: flex; gap: 0.5rem; }
+        .form-row > * { flex: 1; }
+        .form-highlight { background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.3); }
+        
+        /* Breakdown rows */
+        .bkd { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; }
+        .bkd:last-child { border-bottom: none; }
+        .bkd.total { font-weight: 600; background: rgba(255,255,255,0.03); margin: 0.4rem -0.6rem; padding: 0.5rem 0.6rem; border-radius: 4px; }
+        .bkd.sub { color: var(--gold); font-weight: 500; }
+        
+        /* Upload */
+        .upload { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: all 0.2s; }
+        .upload:hover { border-color: var(--accent); background: rgba(99,102,241,0.05); }
+        .upload input { display: none; }
+        
+        /* Alerts */
+        .alert { padding: 0.6rem 0.8rem; border-radius: 6px; margin-bottom: 0.75rem; font-size: 0.8rem; border-left: 3px solid; }
+        .alert-info { background: rgba(99,102,241,0.08); border-color: var(--info); }
+        .alert-warning { background: rgba(245,158,11,0.08); border-color: var(--warning); }
+        .alert-danger { background: rgba(239,68,68,0.08); border-color: var(--danger); }
+        .alert-success { background: rgba(16,185,129,0.08); border-color: var(--success); }
+        
+        /* Tabs */
+        .tabs { display: flex; gap: 0.2rem; background: rgba(0,0,0,0.2); padding: 0.2rem; border-radius: 6px; margin-bottom: 0.75rem; }
+        .tab { padding: 0.4rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; transition: all 0.15s; }
+        .tab:hover { background: rgba(255,255,255,0.05); }
+        .tab.active { background: var(--accent); color: #fff; }
+        
+        /* Result box */
+        .result { background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.02)); border: 1px solid rgba(16,185,129,0.15); border-radius: 8px; padding: 0.8rem; }
+        .warn-box { background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.02)); border: 1px solid rgba(245,158,11,0.15); border-radius: 8px; padding: 0.8rem; }
+        
+        /* Scenario card clickable */
+        .scenario-card { cursor: pointer; transition: all 0.15s; }
+        .scenario-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+        
+        /* Formula display */
+        .formula { font-family: 'Consolas', monospace; background: rgba(0,0,0,0.4); padding: 0.5rem 0.75rem; border-radius: 5px; font-size: 0.8rem; margin: 0.5rem 0; }
+        
+        /* Divider */
+        .divider { height: 1px; background: var(--border); margin: 0.75rem 0; }
+        
+        /* Slider */
+        .slider { width: 100%; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.1); -webkit-appearance: none; margin: 0.4rem 0; }
+        .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+    </style>
+</head>
+<body>
+<div class="app">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="logo">🍫 Vosges Pricing v3.5 <span id="saveIndicator" style="font-size:0.7rem;" title="Cloud sync status"></span></div>
+        
+        <div class="nav-group">
+            <div class="nav-title">Scenarios</div>
+            <div class="nav-item active" data-view="dashboard">📊 Dashboard</div>
+            <div class="nav-item" data-view="newScenario">➕ New Scenario</div>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-title">Upload Data</div>
+            <div class="nav-item" data-view="uploadBOM">📄 Fishbowl BOM</div>
+            <div class="nav-item" data-view="uploadFlavor">🧪 Flavor Studio</div>
+            <div class="nav-item" data-view="uploadCosts">💰 Ingredient Costs</div>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-title">Configuration</div>
+            <div class="nav-item" data-view="laborConfig">👷 Labor Rates</div>
+            <div class="nav-item" data-view="packagingConfig">📦 Packaging</div>
+            <div class="nav-item" data-view="palletConfig">🎨 Pallet Specs</div>
+            <div class="nav-item" data-view="ingredientLib">🍫 Ingredient Library</div>
+        </div>
+        
+        <div class="nav-group">
+            <div class="nav-title">Tools</div>
+            <div class="nav-item" data-view="goalSolver">🎯 Goal Solver</div>
+            <div class="nav-item" data-view="marginCalc">🧮 Margin Calc</div>
+            <div class="nav-item" data-view="auditReport">📋 Audit Report</div>
+        </div>
+
+        <div class="nav-group">
+            <div class="nav-title">Data</div>
+            <div class="nav-item" onclick="showExportModal()">📤 Export Scenario</div>
+            <div class="nav-item" onclick="syncToCloud()">☁️ Sync to Cloud</div>
+            <div class="nav-item" onclick="exportFullState()">💾 Export Backup</div>
+            <div class="nav-item" onclick="importFullState()">📂 Import Backup</div>
+            <div class="nav-item" onclick="resetToDefaults()">🔄 Reset Defaults</div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main" id="mainContent"></main>
+
+    <!-- Chat Panel -->
+    <aside class="chat">
+        <div class="chat-header">💬 Pricing Assistant</div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="msg sys">
+                <strong>Ask me anything about pricing!</strong><br><br>
+                I understand natural questions like:
+                <ul>
+                    <li>"Break down CHW costs"</li>
+                    <li>"Why is the margin only 33%?"</li>
+                    <li>"What if we raised the price to $0.80?"</li>
+                    <li>"Compare all scenarios"</li>
+                    <li>"How are minor materials calculated?"</li>
+                    <li>"What's the difference between markup and margin?"</li>
+                </ul>
+            </div>
+        </div>
+        <div class="chat-input-wrap">
+            <textarea class="chat-input" id="chatInput" rows="2" placeholder="Ask about any calculation..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+            <button class="btn btn-primary btn-sm" style="width:100%; margin-top:0.4rem;" onclick="sendChat()">Send Message</button>
+        </div>
+    </aside>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUPABASE CLOUD SYNC + LOCALSTORAGE FALLBACK
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SUPABASE_URL = 'https://szjkulsdattjabyqtxip.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_8qTqIXrVbyNlFqNZvAo8nA_D1K7Gv1w';
+
+const STORAGE_KEYS = {
+    scenarios: 'vosges_scenarios',
+    ingredients: 'vosges_ingredients',
+    config: 'vosges_config',
+    lastSaved: 'vosges_lastSaved'
+};
+
+let saveTimeout = null;
+let lastSavedTime = null;
+let cloudStatus = 'idle'; // 'idle', 'syncing', 'error', 'offline'
+
+// Supabase REST API helper
+async function supabaseFetch(endpoint, options = {}) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, {
+        ...options,
+        headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': options.method === 'POST' ? 'resolution=merge-duplicates,return=representation' : 'return=representation',
+            'x-vhc-staff': 'true',
+            ...options.headers
+        }
+    });
+    if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`API Error ${res.status}: ${err}`);
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+}
+
+// Sync scenarios to cloud
+async function syncToCloud() {
+    cloudStatus = 'syncing';
+    updateSyncIndicator();
+    try {
+        for (const [id, s] of Object.entries(SCENARIOS)) {
+            await supabaseFetch('scenarios', {
+                method: 'POST',
+                body: JSON.stringify({
+                    scenario_code: id,
+                    name: s.name,
+                    type: s.type,
+                    production: s.production,
+                    units: s.units,
+                    labor: s.labor,
+                    packaging: s.packaging,
+                    ingredient_method: s.ingredientMethod,
+                    ingredient_data: {
+                        plug: s.ingredientPlugPerPiece,
+                        bom: s.ingredientBOM,
+                        note: s.ingredientNote
+                    },
+                    pricing_method: s.pricingMethod,
+                    pricing_factor: s.pricingFactor,
+                    pricing_formula: s.pricingFormula,
+                    minor_materials: s.minorMaterials,
+                    minor_materials_per_pallet: s.minorMaterialsPerPallet,
+                    minor_materials_per_piece: s.minorMaterialsPerPiece,
+                    minor_materials_added: s.minorMaterialsAddedToPrice,
+                    pallet_config: s.palletConfig,
+                    customer_pricing: s.customerPricing,
+                    final_price: s.finalPrice,
+                    price_note: s.priceNote,
+                    updated_at: new Date().toISOString()
+                })
+            });
+        }
+        cloudStatus = 'idle';
+        lastSavedTime = new Date().toISOString();
+        // Also save to localStorage as backup
+        saveToLocalStorage();
+        addChat('sys', '☁️ Synced to cloud');
+    } catch (e) {
+        console.error('Cloud sync failed:', e);
+        cloudStatus = 'error';
+        // Fall back to localStorage
+        saveToLocalStorage();
+        addChat('sys', '⚠️ Cloud sync failed, saved locally');
+    }
+    updateSyncIndicator();
+}
+
+// Load from cloud
+async function loadFromCloud() {
+    try {
+        const scenarios = await supabaseFetch('scenarios?order=name');
+        if (scenarios && scenarios.length > 0) {
+            Object.keys(SCENARIOS).forEach(k => delete SCENARIOS[k]);
+            scenarios.forEach(s => {
+                SCENARIOS[s.scenario_code] = {
+                    id: s.scenario_code,
+                    name: s.name,
+                    type: s.type,
+                    production: s.production,
+                    units: s.units,
+                    labor: s.labor,
+                    packaging: s.packaging,
+                    ingredientMethod: s.ingredient_method,
+                    ingredientPlugPerPiece: s.ingredient_data?.plug,
+                    ingredientBOM: s.ingredient_data?.bom,
+                    ingredientNote: s.ingredient_data?.note,
+                    pricingMethod: s.pricing_method,
+                    pricingFactor: s.pricing_factor,
+                    pricingFormula: s.pricing_formula,
+                    minorMaterials: s.minor_materials,
+                    minorMaterialsPerPallet: s.minor_materials_per_pallet,
+                    minorMaterialsPerPiece: s.minor_materials_per_piece,
+                    minorMaterialsAddedToPrice: s.minor_materials_added,
+                    palletConfig: s.pallet_config,
+                    customerPricing: s.customer_pricing,
+                    finalPrice: s.final_price,
+                    priceNote: s.price_note
+                };
+            });
+            cloudStatus = 'idle';
+            return true;
+        }
+        return false;
+    } catch (e) {
+        console.error('Cloud load failed:', e);
+        cloudStatus = 'offline';
+        return false;
+    }
+}
+
+// LocalStorage fallback
+function saveToLocalStorage() {
+    try {
+        localStorage.setItem(STORAGE_KEYS.scenarios, JSON.stringify(SCENARIOS));
+        localStorage.setItem(STORAGE_KEYS.ingredients, JSON.stringify(INGREDIENTS));
+        localStorage.setItem(STORAGE_KEYS.config, JSON.stringify(CONFIG));
+        lastSavedTime = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEYS.lastSaved, lastSavedTime);
+    } catch(e) {
+        console.error('LocalStorage save failed:', e);
+    }
+}
+
+function loadFromLocalStorage() {
+    try {
+        const savedScenarios = localStorage.getItem(STORAGE_KEYS.scenarios);
+        const savedIngredients = localStorage.getItem(STORAGE_KEYS.ingredients);
+        const savedConfig = localStorage.getItem(STORAGE_KEYS.config);
+        lastSavedTime = localStorage.getItem(STORAGE_KEYS.lastSaved);
+
+        if (savedScenarios) {
+            const parsed = JSON.parse(savedScenarios);
+            Object.keys(SCENARIOS).forEach(k => delete SCENARIOS[k]);
+            Object.assign(SCENARIOS, parsed);
+        }
+        if (savedIngredients) {
+            INGREDIENTS.length = 0;
+            INGREDIENTS.push(...JSON.parse(savedIngredients));
+        }
+        if (savedConfig) {
+            Object.assign(CONFIG, JSON.parse(savedConfig));
+        }
+        return true;
+    } catch(e) {
+        console.error('LocalStorage load failed:', e);
+        return false;
+    }
+}
+
+function updateSyncIndicator() {
+    const el = document.getElementById('saveIndicator');
+    if (!el) return;
+    const states = {
+        idle: { icon: '☁️', color: '#10b981', title: 'Cloud synced' },
+        syncing: { icon: '⏳', color: '#f59e0b', title: 'Syncing...' },
+        error: { icon: '⚠️', color: '#ef4444', title: 'Sync error - click to retry' },
+        offline: { icon: '💾', color: '#6366f1', title: 'Offline mode (localStorage)' }
+    };
+    const state = states[cloudStatus];
+    el.innerHTML = state.icon;
+    el.style.color = state.color;
+    el.title = state.title + (lastSavedTime ? ' - Last: ' + new Date(lastSavedTime).toLocaleTimeString() : '');
+    el.style.cursor = cloudStatus === 'error' ? 'pointer' : 'default';
+    el.onclick = cloudStatus === 'error' ? syncToCloud : null;
+}
+
+function debouncedSave() {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+        syncToCloud();
+    }, 2000);
+    cloudStatus = 'syncing';
+    updateSyncIndicator();
+}
+
+function exportFullState() {
+    const state = {
+        version: '3.5',
+        exportedAt: new Date().toISOString(),
+        scenarios: SCENARIOS,
+        ingredients: INGREDIENTS,
+        config: CONFIG
+    };
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vosges_backup_' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    addChat('sys', '💾 Backup exported');
+}
+
+function importFullState() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const state = JSON.parse(ev.target.result);
+                if (!state.scenarios) {
+                    alert('Invalid backup file: missing scenarios');
+                    return;
+                }
+                if (!confirm('Import backup? This will replace all current data.')) return;
+
+                Object.keys(SCENARIOS).forEach(k => delete SCENARIOS[k]);
+                Object.assign(SCENARIOS, state.scenarios);
+
+                if (state.ingredients) {
+                    INGREDIENTS.length = 0;
+                    INGREDIENTS.push(...state.ingredients);
+                }
+                if (state.config) {
+                    Object.assign(CONFIG, state.config);
+                }
+
+                syncToCloud();
+                showView('dashboard');
+                addChat('sys', '📂 Backup imported successfully');
+            } catch(err) {
+                alert('Error parsing backup: ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+
+function resetToDefaults() {
+    if (!confirm('Reset all data to defaults? This will delete all custom scenarios and changes. This cannot be undone.')) return;
+    localStorage.removeItem(STORAGE_KEYS.scenarios);
+    localStorage.removeItem(STORAGE_KEYS.ingredients);
+    localStorage.removeItem(STORAGE_KEYS.config);
+    localStorage.removeItem(STORAGE_KEYS.lastSaved);
+    location.reload();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMPLETE DATA FROM AUDIT - EXACT SPREADSHEET VALUES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SCENARIOS = {
+    CHW: {
+        id: 'CHW', name: 'CHW (Coopers Hawk)', type: 'tray',
+        // Production (Row 2)
+        production: { pcPerMold: 36, moldsPerMin: 1, minPerHr: 60, runHours: 6, ozPerPiece: 1.0 },
+        // Calculated: 12,960 pc/shift, 810 lbs total
+        
+        // Units
+        units: { perTray: 16, perCase: 64, perPallet: 9216 },
+        
+        // Labor (Rows 5-9, $26/hr)
+        labor: [
+            { name: 'Prep/Clean Up/Change Overs', people: 2, hours: 3, rate: 26 },
+            { name: 'Deposit', people: 5, hours: 6, rate: 26 },
+            { name: 'Enrobing', people: 7, hours: 6, rate: 26 },
+            { name: 'Assembly', people: 1, hours: 6, rate: 26 },
+            { name: 'Wrapping', people: 2, hours: 7, rate: 26 }
+        ],
+        // Total: $2,548, per pc: $0.196605
+        
+        // Packaging (Rows 16-20)
+        packaging: [
+            { name: 'Clear Tray', unitCost: 0.10, per: 'tray', divisor: 16 },
+            { name: 'BO-LSL Box', unitCost: 0.621, per: 'case', divisor: 64 },
+            { name: 'Label', unitCost: 0.20, per: 'case', divisor: 64 },
+            { name: '5A Candy Cups', unitCost: 0.0069, per: 'piece', divisor: 1 },
+            { name: 'FILM', unitCost: 0.0392, per: 'tray', divisor: 16 }
+        ],
+        // Total per pc: $0.028428
+        
+        // Ingredients (N12 - PLUG VALUE)
+        ingredientMethod: 'plug',
+        ingredientPlugPerPiece: 0.25,
+        ingredientNote: 'shell + filling (plug avg $)',
+        
+        // COGS = $0.475033 (H21)
+        
+        // Pricing (Row 22) - MARKUP METHOD
+        pricingMethod: 'markup',
+        pricingFactor: 0.50,  // B22: called "margin" but formula is ×1.5
+        pricingFormula: 'COGS × (1 + 0.50)',
+        // Selling: $0.712550 (H22)
+        
+        // Minor materials (Rows 23-27) - NOT added to price!
+        minorMaterials: [
+            { name: 'Shrink Wrap', cost: 2.00 },
+            { name: 'Slip Sheets', cost: 1.76 },
+            { name: 'Pallets', cost: 15.00 },
+            { name: 'Labels, Tape, Date', cost: 19.20, note: '$0.20 × 96 cases' }
+        ],
+        minorMaterialsPerPallet: 37.96,
+        minorMaterialsPerPiece: 0.004119,
+        minorMaterialsAddedToPrice: false,  // H27 = H22 (no addition!)
+        
+        // Pallet (Row 29-30)
+        palletConfig: { tiHi: 'not specified', cases: 96, units: 9216, note: 'LIP is 192/cs × 96cs = 18432/2 = 9216pc/plt' },
+        
+        // Final
+        finalPrice: 0.712550,
+        priceNote: 'Cost to Albert Uster/CHW'
+    },
+    
+    LSL: {
+        id: 'LSL', name: 'LSL', type: 'tray',
+        production: { pcPerMold: 72, moldsPerMin: 1, minPerHr: 60, runHours: 6, ozPerPiece: 0.42 },
+        units: { perTray: 16, perCase: 64, perPallet: 18432 },
+        labor: [
+            { name: 'Prep/Clean Up/Change Overs', people: 2, hours: 3, rate: 26 },
+            { name: 'Deposit', people: 5, hours: 6, rate: 26 },
+            { name: 'Enrobing', people: 7, hours: 6, rate: 26 },
+            { name: 'Assembly', people: 1, hours: 6, rate: 26 },
+            { name: 'Wrapping', people: 2, hours: 7, rate: 26 }
+        ],
+        packaging: [
+            { name: 'Clear Tray', unitCost: 0.10, per: 'tray', divisor: 16 },
+            { name: 'BO-LSL Box', unitCost: 0.621, per: 'case', divisor: 64 },
+            { name: 'Label', unitCost: 0.20, per: 'case', divisor: 64 },
+            { name: '5A Candy Cups', unitCost: 0.0069, per: 'piece', divisor: 1 },
+            { name: 'FILM', unitCost: 0.0392, per: 'tray', divisor: 16 }
+        ],
+        ingredientMethod: 'plug',
+        ingredientPlugPerPiece: 0.15,
+        pricingMethod: 'markup',
+        pricingFactor: 0.50,
+        pricingFormula: 'COGS × (1 + 0.50)',
+        minorMaterials: [
+            { name: 'Shrink Wrap', cost: 2.00 },
+            { name: 'Slip Sheets', cost: 1.76 },
+            { name: 'Pallets', cost: 15.00 },
+            { name: 'Labels, Tape, Date', cost: 19.20 }
+        ],
+        minorMaterialsPerPallet: 37.96,
+        minorMaterialsPerPiece: 0.002059,
+        minorMaterialsAddedToPrice: false,
+        palletConfig: { tiHi: 'not specified', cases: 96, units: 18432 },
+        finalPrice: 0.415096,
+        priceNote: 'currently at .71 FOB'
+    },
+    
+    Dan: {
+        id: 'Dan', name: 'Dan (Dandies Bulk)', type: 'bulk',
+        production: { pcPerMold: 1, moldsPerMin: 75, minPerHr: 60, runHours: 7, ozPerPiece: 0.2745 },
+        // 31,500 pc/shift, 540.42 lbs total
+        
+        // Component ratio (NOT 60/40!)
+        componentRatio: {
+            dandieMarshmallow: 0.5527,  // L3
+            chocolate: 0.4473,          // M3
+            chocolateScrapFactor: 1.03  // +3% scrap
+        },
+        
+        labor: [
+            { name: 'Prep/Clean Up/Change Overs', people: 2, hours: 2, rate: 26 },
+            { name: 'Deposit', people: 0, hours: 0, rate: 26 },
+            { name: 'Enrobing', people: 5, hours: 7, rate: 26 },
+            { name: 'Sealing Box/Palletize', people: 2, hours: 7, rate: 26 },
+            { name: 'Wrapping', people: 0, hours: 0, rate: 26 }
+        ],
+        // Total: $1,378
+        
+        // Bulk boxes: 540.42 lbs / 10 = 54.04 boxes
+        packaging: [
+            { name: 'BO-COR-10x10x10', unitCost: 1.00, qty: 55, roundUp: true },  // ROUNDUP(54.04)
+            { name: 'BA-PLY-15x9x24 Bag', unitCost: 0.21, qty: 12, roundUp: true }
+        ],
+        // packaging total: $55 + $12 = $67 but spreadsheet shows F17=55, F18=12
+        
+        // Ingredients - ACTUAL BOM
+        ingredientMethod: 'bom',
+        ingredientBOM: [
+            { name: 'IRCA Intenso 55', sku: 'IRCA-INT55', costPerLb: 6.25, lbsUsed: 248.98, extCost: 1556.14 }
+            // 540.42 × 0.4473 × 1.03 = 248.98 lbs chocolate
+        ],
+        // Material total: $1,556.14 (chocolate) + $55 (box) + $12.60 (bag) = ~$1,623.74
+        // Spreadsheet F20: $1,623.14
+        
+        // PRICING IS PER RUN, NOT PER PIECE!
+        pricingUnit: 'run',
+        pricingMethod: 'markup',
+        pricingFactor: 0.50,
+        pricingFormula: 'COGS × (1 + 0.50)',
+        // COGS: $3,001.14 (labor + materials)
+        // Selling: $4,501.71
+        
+        // Minor materials - ADDED AFTER markup
+        minorMaterials: [
+            { name: 'Shrink Wrap', cost: 2.00, qty: 1 },
+            { name: 'Slip Sheets', cost: 1.76, qty: 1 },
+            { name: 'Pallets', cost: 15.00, qty: 1 },
+            { name: 'Labels, Tape, Date', cost: 0.25, qty: 55, note: 'per box' }  // $13.75
+        ],
+        minorMaterialsTotal: 32.51,
+        minorMaterialsAddedToPrice: true,
+        
+        finalPrice: 4534.22,  // H29 = H22 + minor materials
+        priceNote: 'Per full production run'
+    },
+    
+    TJPBPBC: {
+        id: 'TJPBPBC', name: "TJ's PB Cups (SUP)", type: 'sup',
+        production: { pcPerMold: 66, moldsPerMin: 10, minPerHr: 60, runHours: 5, ozPerPiece: 0.42 },
+        // 198,000 pc/shift, 10,421 SUP/shift, 5,197.5 lbs total
+        
+        units: { perSUP: 19, perCase: 24, perPallet: 1008 },
+        
+        labor: [
+            { name: 'Prep/Clean Up', people: 2, hours: 4, rate: 26 },
+            { name: 'Buhler', people: 4, hours: 5, rate: 26 },
+            { name: 'Bagger', people: 7, hours: 8, rate: 26 },
+            { name: 'Case Pk/Palletize', people: 2, hours: 5, rate: 26 },
+            { name: 'Bagger Cleaning 1 day', people: 3, hours: 4, rate: 26 }
+        ],
+        // Total: $2,756, per SUP: $0.264465
+        
+        // PACKAGING - NOTE: H19 is $1.00 WHOLE, not per SUP!
+        packaging: [
+            { name: 'Case pk 24ct - 18×14×8', unitCost: 1.00, per: 'case', perSUP: 1.00, note: 'H19 shows $1 flat, not ÷24!' },
+            { name: 'SUP pkg\'ing', unitCost: 0.10, per: 'SUP', perSUP: 0.10 }
+        ],
+        // Total pkg per SUP: $1.10 (this seems high - possible error in original?)
+        
+        // Ingredients - FLAVOR STUDIO HARD-CODED
+        ingredientMethod: 'flavorStudio',
+        ingredientBOM: {
+            shell: { name: 'Compound', lbs: 3118.50, extCost: 5731.43 },
+            filling: [
+                { name: 'PB', lbs: 1095.01, extCost: 1906.41 },
+                { name: 'Invert', lbs: 878.38, extCost: 2898.65 },
+                { name: 'Other (K17)', lbs: 101.46, extCost: 354.08 },
+                { name: 'Other (K18)', lbs: 4.16, extCost: 8.22 }
+            ],
+            totalShellCost: 5731.43,
+            totalFillingCost: 5167.36,
+            totalRunCost: 10898.79
+        },
+        // Per SUP: $1.045843 (H18)
+        
+        // COGS per SUP (H21)
+        // H17 ($0.2645) + H18 ($1.0458) + H19 ($1.00) + H20 ($0.10) = $2.4103
+        cogsPerSUP: 2.4103,
+        
+        // Pricing - TRUE MARGIN METHOD
+        pricingUnit: 'SUP',
+        pricingMethod: 'margin',
+        pricingFactor: 0.30,  // B22: 30% margin
+        pricingFormula: 'COGS ÷ (1 - 0.30)',
+        // LMH Target: $3.4433 (H22)
+        
+        // Minor materials - ADDED AFTER margin calculation
+        minorMaterials: [
+            { name: 'Shrink Wrap', cost: 2.00, per: 'pallet', divisor: 1008, perSUP: 0.001984 },
+            { name: 'Slip Sheets', cost: 1.56, per: 'pallet', divisor: 1008, perSUP: 0.001548 },
+            { name: 'Pallets', cost: 15.00, per: 'pallet', divisor: 1008, perSUP: 0.014881 },
+            { name: 'Labels, Tape, Date', cost: 0.25, per: 'case', divisor: 24, perSUP: 0.010417 }
+        ],
+        minorMaterialsPerSUP: 0.02883,
+        minorMaterialsAddedToPrice: true,
+        
+        // LMH Final Price (H27): $3.4721
+        lmhTargetPrice: 3.4721,
+        
+        // Customer (TJ's) pricing
+        customerPricing: {
+            name: "Trader Joe's",
+            targetMargin: 0.335,       // B28: 33.5%
+            dictatedPrice: 4.99,       // H28: $4.99 (TJ sets price)
+            delta: 1.5179,             // J28: difference from LMH
+            actualMargin: 0.3042,      // J29: actual margin achieved
+            marginDelta: 0.0308        // J30: shortfall from target
+        },
+        
+        // Pallet config (Row 31)
+        palletConfig: {
+            tiHi: '6 × 7',
+            cases: 42,
+            height: '62" h',
+            weight: '672 pounds',
+            units: 1008,  // 42 × 24 SUP
+            palletsPerDay: 10.34
+        },
+        
+        // Next steps notes (M column)
+        notes: [
+            'labor, by extending shift and finding efficiencies',
+            'increase volume through supplier to reduce costs',
+            'supplier due diligence and quality safety',
+            '1st stage gate',
+            'sch production run with wcc',
+            'sch qa audit',
+            'exec lvl with AR and Elida',
+            'if all good green light - 2 weeks..'
+        ]
+    }
+};
+
+// Global config
+const CONFIG = {
+    defaultLaborRate: 26,
+    ozPerLb: 16
+};
+
+// Uploaded data storage
+const UPLOADS = {
+    boms: [],
+    flavorStudio: [],
+    ingredientCosts: []
+};
+
+// Ingredient library
+const INGREDIENTS = [
+    { sku: 'IRCA-INT55', name: 'IRCA Intenso 55%', costPerLb: 6.25, uom: 'lb', source: 'Fishbowl' },
+    { sku: 'COMPOUND-PB', name: 'PB Compound', costPerLb: 1.84, uom: 'lb', source: 'Flavor Studio' },
+    { sku: 'PB-SMOOTH', name: 'Peanut Butter', costPerLb: 1.74, uom: 'lb', source: 'Fishbowl' },
+    { sku: 'INVERT-SYR', name: 'Invert Syrup', costPerLb: 3.30, uom: 'lb', source: 'Fishbowl' }
+];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CALCULATION ENGINE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function calculate(id) {
+    const s = SCENARIOS[id];
+    if (!s) return null;
+    
+    const r = { scenario: s, production: {}, labor: {}, packaging: {}, ingredients: {}, cogs: {}, pricing: {}, minorMaterials: {} };
+    const p = s.production;
+    
+    // Production
+    r.production.piecesPerMin = p.pcPerMold * p.moldsPerMin;
+    r.production.piecesPerHour = r.production.piecesPerMin * p.minPerHr;
+    r.production.piecesPerShift = r.production.piecesPerHour * p.runHours;
+    r.production.totalOz = r.production.piecesPerShift * p.ozPerPiece;
+    r.production.totalLbs = r.production.totalOz / CONFIG.ozPerLb;
+    
+    if (s.type === 'tray') {
+        r.production.traysPerShift = r.production.piecesPerShift / s.units.perTray;
+        r.production.casesPerShift = r.production.piecesPerShift / s.units.perCase;
+    } else if (s.type === 'sup') {
+        r.production.supsPerShift = r.production.piecesPerShift / s.units.perSUP;
+        r.production.casesPerShift = r.production.supsPerShift / s.units.perCase;
+        r.production.palletsPerDay = r.production.supsPerShift / s.palletConfig.units;
+    } else if (s.type === 'bulk') {
+        r.production.bulkBoxes = Math.ceil(r.production.totalLbs / 10);
+    }
+    
+    // Labor
+    r.labor.steps = [];
+    r.labor.total = 0;
+    s.labor.forEach(l => {
+        const cost = l.people * l.hours * l.rate;
+        r.labor.steps.push({ ...l, cost });
+        r.labor.total += cost;
+    });
+    
+    if (s.type === 'tray') {
+        r.labor.perPiece = r.labor.total / r.production.piecesPerShift;
+        r.labor.perUnit = r.labor.perPiece;
+        r.labor.unit = 'piece';
+    } else if (s.type === 'sup') {
+        r.labor.perSUP = r.labor.total / r.production.supsPerShift;
+        r.labor.perUnit = r.labor.perSUP;
+        r.labor.unit = 'SUP';
+    } else if (s.type === 'bulk') {
+        r.labor.perRun = r.labor.total;
+        r.labor.perUnit = r.labor.perRun;
+        r.labor.unit = 'run';
+    }
+    
+    // Packaging
+    r.packaging.items = [];
+    r.packaging.total = 0;
+    
+    if (s.type === 'tray') {
+        s.packaging.forEach(pkg => {
+            const perPiece = pkg.unitCost / pkg.divisor;
+            r.packaging.items.push({ ...pkg, perPiece });
+            r.packaging.total += perPiece;
+        });
+        r.packaging.perUnit = r.packaging.total;
+        r.packaging.unit = 'piece';
+    } else if (s.type === 'sup') {
+        s.packaging.forEach(pkg => {
+            r.packaging.items.push({ ...pkg });
+            r.packaging.total += pkg.perSUP;
+        });
+        r.packaging.perUnit = r.packaging.total;
+        r.packaging.unit = 'SUP';
+    } else if (s.type === 'bulk') {
+        let total = 0;
+        s.packaging.forEach(pkg => {
+            const cost = pkg.unitCost * pkg.qty;
+            r.packaging.items.push({ ...pkg, cost });
+            total += cost;
+        });
+        r.packaging.total = total;
+        r.packaging.perUnit = total;
+        r.packaging.unit = 'run';
+    }
+    
+    // Ingredients
+    if (s.ingredientMethod === 'plug') {
+        r.ingredients.method = 'plug';
+        r.ingredients.perPiece = s.ingredientPlugPerPiece;
+        r.ingredients.perUnit = s.ingredientPlugPerPiece;
+        r.ingredients.unit = 'piece';
+        r.ingredients.totalPerRun = s.ingredientPlugPerPiece * r.production.piecesPerShift;
+    } else if (s.ingredientMethod === 'bom') {
+        r.ingredients.method = 'bom';
+        const chocLbs = r.production.totalLbs * s.componentRatio.chocolate * s.componentRatio.chocolateScrapFactor;
+        const chocCost = chocLbs * s.ingredientBOM[0].costPerLb;
+        r.ingredients.chocolateLbs = chocLbs;
+        r.ingredients.chocolateCost = chocCost;
+        r.ingredients.totalPerRun = chocCost;
+        r.ingredients.perUnit = chocCost;
+        r.ingredients.unit = 'run';
+    } else if (s.ingredientMethod === 'flavorStudio') {
+        r.ingredients.method = 'flavorStudio';
+        r.ingredients.shellCost = s.ingredientBOM.totalShellCost;
+        r.ingredients.fillingCost = s.ingredientBOM.totalFillingCost;
+        r.ingredients.totalPerRun = s.ingredientBOM.totalRunCost;
+        r.ingredients.perSUP = r.ingredients.totalPerRun / r.production.supsPerShift;
+        r.ingredients.perUnit = r.ingredients.perSUP;
+        r.ingredients.unit = 'SUP';
+    }
+    
+    // COGS
+    if (s.type === 'tray') {
+        r.cogs.labor = r.labor.perPiece;
+        r.cogs.packaging = r.packaging.perUnit;
+        r.cogs.ingredients = r.ingredients.perPiece;
+        r.cogs.perUnit = r.cogs.labor + r.cogs.packaging + r.cogs.ingredients;
+        r.cogs.unit = 'piece';
+    } else if (s.type === 'sup') {
+        r.cogs.labor = r.labor.perSUP;
+        r.cogs.packaging = r.packaging.perUnit;
+        r.cogs.ingredients = r.ingredients.perSUP;
+        r.cogs.perUnit = r.cogs.labor + r.cogs.packaging + r.cogs.ingredients;
+        r.cogs.unit = 'SUP';
+        // Override with known value if available
+        if (s.cogsPerSUP) r.cogs.perUnit = s.cogsPerSUP;
+    } else if (s.type === 'bulk') {
+        r.cogs.labor = r.labor.total;
+        r.cogs.packaging = r.packaging.total;
+        r.cogs.ingredients = r.ingredients.totalPerRun;
+        r.cogs.perUnit = r.cogs.labor + r.cogs.packaging + r.cogs.ingredients;
+        r.cogs.unit = 'run';
+    }
+    
+    // Pricing
+    if (s.pricingMethod === 'markup') {
+        r.pricing.method = 'markup';
+        r.pricing.factor = s.pricingFactor;
+        r.pricing.formula = s.pricingFormula;
+        r.pricing.sellingPrice = r.cogs.perUnit * (1 + s.pricingFactor);
+        r.pricing.impliedMargin = (r.pricing.sellingPrice - r.cogs.perUnit) / r.pricing.sellingPrice;
+        r.pricing.impliedMarkup = s.pricingFactor;
+    } else if (s.pricingMethod === 'margin') {
+        r.pricing.method = 'margin';
+        r.pricing.factor = s.pricingFactor;
+        r.pricing.formula = s.pricingFormula;
+        r.pricing.sellingPrice = r.cogs.perUnit / (1 - s.pricingFactor);
+        r.pricing.impliedMargin = s.pricingFactor;
+        r.pricing.impliedMarkup = s.pricingFactor / (1 - s.pricingFactor);
+    }
+    r.pricing.grossProfit = r.pricing.sellingPrice - r.cogs.perUnit;
+    
+    // Minor materials
+    r.minorMaterials.items = s.minorMaterials || [];
+    r.minorMaterials.addedToPrice = s.minorMaterialsAddedToPrice;
+    if (s.type === 'tray') {
+        r.minorMaterials.perUnit = s.minorMaterialsPerPiece || 0;
+    } else if (s.type === 'sup') {
+        r.minorMaterials.perUnit = s.minorMaterialsPerSUP || 0;
+    } else if (s.type === 'bulk') {
+        r.minorMaterials.perUnit = s.minorMaterialsTotal || 0;
+    }
+    
+    // Final price
+    if (s.minorMaterialsAddedToPrice) {
+        r.pricing.finalPrice = r.pricing.sellingPrice + r.minorMaterials.perUnit;
+    } else {
+        r.pricing.finalPrice = r.pricing.sellingPrice;
+    }
+    
+    // Customer pricing (TJPBPBC)
+    if (s.customerPricing) {
+        r.pricing.customer = { ...s.customerPricing };
+    }
+    
+    return r;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIEW RENDERERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function renderDashboard() {
+    const cards = Object.keys(SCENARIOS).map(id => {
+        const c = calculate(id);
+        const s = c.scenario;
+        const marginClass = c.pricing.impliedMargin >= 0.30 ? 'text-success' : c.pricing.impliedMargin >= 0.25 ? 'text-warning' : 'text-danger';
+        
+        return `
+        <div class="card scenario-card">
+            <div class="card-head">
+                <span class="card-title" style="cursor:pointer;" onclick="viewScenario('${id}')">${s.name}</span>
+                <div>
+                    <span class="tag tag-${s.pricingMethod === 'margin' ? 'success' : 'info'}">${s.pricingMethod}</span>
+                    <span class="tag tag-purple">${s.type}</span>
+                </div>
+            </div>
+            <div class="grid grid-4" style="text-align:center; cursor:pointer;" onclick="viewScenario('${id}')">
+                <div>
+                    <div class="metric-label">COGS/${c.cogs.unit}</div>
+                    <div class="metric-xs text-warning">$${c.cogs.perUnit.toFixed(4)}</div>
+                </div>
+                <div>
+                    <div class="metric-label">Sell Price</div>
+                    <div class="metric-xs text-success">$${c.pricing.sellingPrice.toFixed(4)}</div>
+                </div>
+                <div>
+                    <div class="metric-label">Margin</div>
+                    <div class="metric-xs ${marginClass}">${(c.pricing.impliedMargin*100).toFixed(1)}%</div>
+                </div>
+                <div>
+                    <div class="metric-label">Output</div>
+                    <div class="metric-xs">${c.production.piecesPerShift.toLocaleString()}</div>
+                </div>
+            </div>
+            ${s.customerPricing ? `
+                <div class="divider"></div>
+                <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
+                    <span>${s.customerPricing.name}: <strong>$${s.customerPricing.dictatedPrice}</strong></span>
+                    <span>Actual: <strong class="${s.customerPricing.actualMargin >= s.customerPricing.targetMargin ? 'text-success' : 'text-danger'}">${(s.customerPricing.actualMargin*100).toFixed(1)}%</strong></span>
+                </div>
+            ` : ''}
+            <div class="divider"></div>
+            <div style="display:flex; gap:0.4rem;">
+                <button class="btn btn-sm btn-outline" onclick="viewScenario('${id}')" style="flex:1;">📊 View</button>
+                <button class="btn btn-sm btn-outline" onclick="duplicateScenario('${id}')" style="flex:1;">📋 Duplicate</button>
+                <button class="btn btn-sm btn-primary" onclick="exportScenario('${id}')" style="flex:1;">📤 Export</button>
+            </div>
+        </div>`;
+    }).join('');
+    
+    return `
+        <div class="header">
+            <h1>📊 Pricing Dashboard</h1>
+            <button class="btn btn-primary" onclick="showView('newScenario')">➕ New Scenario</button>
+        </div>
+        
+        <div class="alert alert-info">
+            <strong>Audit Complete:</strong> 4 scenarios analyzed. CHW/LSL/Dan use <strong>markup ×1.5</strong> (=33.3% margin), 
+            TJPBPBC uses <strong>margin 30%</strong> (÷0.7). Use <strong>Export</strong> to create standalone files for prospects.
+        </div>
+        
+        <div class="grid grid-2">${cards}</div>
+    `;
+}
+
+function viewScenario(id) {
+    const c = calculate(id);
+    const s = c.scenario;
+    const marginClass = c.pricing.impliedMargin >= 0.30 ? 'text-success' : 'text-warning';
+    const isOriginal = ['CHW', 'LSL', 'Dan', 'TJPBPBC'].includes(id);
+    
+    document.getElementById('mainContent').innerHTML = `
+        <div class="header">
+            <div>
+                <h1>${s.name}</h1>
+                <span class="tag tag-${s.pricingMethod === 'margin' ? 'success' : 'info'}">${s.pricingMethod}</span>
+                <span class="tag tag-purple">${s.type}</span>
+                <span class="tag">${s.ingredientMethod}</span>
+            </div>
+            <div style="display:flex; gap:0.4rem;">
+                <button class="btn btn-outline" onclick="showView('dashboard')">← Back</button>
+                <button class="btn btn-outline" onclick="duplicateScenario('${id}')">📋 Duplicate</button>
+                <button class="btn btn-primary" onclick="exportScenario('${id}')">📤 Export HTML</button>
+                ${!isOriginal ? `<button class="btn" style="background:#ef4444; color:#fff;" onclick="deleteScenario('${id}')">🗑️ Delete</button>` : ''}
+            </div>
+        </div>
+        
+        <!-- KPIs -->
+        <div class="grid grid-5">
+            <div class="card" style="text-align:center;">
+                <div class="metric-label">COGS / ${c.cogs.unit}</div>
+                <div class="metric-sm text-warning">$${c.cogs.perUnit.toFixed(4)}</div>
+            </div>
+            <div class="card" style="text-align:center;">
+                <div class="metric-label">Base Selling</div>
+                <div class="metric-sm text-success">$${c.pricing.sellingPrice.toFixed(4)}</div>
+            </div>
+            <div class="card" style="text-align:center;">
+                <div class="metric-label">Margin</div>
+                <div class="metric-sm ${marginClass}">${(c.pricing.impliedMargin*100).toFixed(1)}%</div>
+            </div>
+            <div class="card" style="text-align:center;">
+                <div class="metric-label">Markup</div>
+                <div class="metric-sm">${(c.pricing.impliedMarkup*100).toFixed(1)}%</div>
+            </div>
+            <div class="card" style="text-align:center;">
+                <div class="metric-label">Final Price</div>
+                <div class="metric-sm text-success">$${c.pricing.finalPrice.toFixed(4)}</div>
+            </div>
+        </div>
+        
+        <div class="grid grid-2">
+            <!-- COGS Breakdown -->
+            <div class="card">
+                <div class="card-head"><span class="card-title">💰 COGS Breakdown</span></div>
+                <div class="bkd"><span>Labor</span><span>$${c.cogs.labor.toFixed(4)} <span class="text-muted">(${(c.cogs.labor/c.cogs.perUnit*100).toFixed(1)}%)</span></span></div>
+                <div class="bkd"><span>Packaging</span><span>$${c.cogs.packaging.toFixed(4)} <span class="text-muted">(${(c.cogs.packaging/c.cogs.perUnit*100).toFixed(1)}%)</span></span></div>
+                <div class="bkd"><span>Ingredients (${c.ingredients.method})</span><span>$${c.cogs.ingredients.toFixed(4)} <span class="text-muted">(${(c.cogs.ingredients/c.cogs.perUnit*100).toFixed(1)}%)</span></span></div>
+                <div class="bkd total"><span>Total COGS / ${c.cogs.unit}</span><span>$${c.cogs.perUnit.toFixed(4)}</span></div>
+                
+                ${c.minorMaterials.addedToPrice ? `
+                    <div class="divider"></div>
+                    <div style="font-size:0.7rem; color:#666; margin-bottom:0.3rem;">Minor materials (added after ${s.pricingMethod}):</div>
+                    ${c.minorMaterials.items.map(m => `
+                        <div class="bkd"><span style="padding-left:0.75rem;">${m.name}</span><span>$${(m.perSUP || m.perPiece || (m.cost * (m.qty||1))).toFixed(4)}</span></div>
+                    `).join('')}
+                    <div class="bkd sub"><span>Final Price</span><span>$${c.pricing.finalPrice.toFixed(4)}</span></div>
+                ` : `
+                    <div class="divider"></div>
+                    <div style="font-size:0.7rem; color:#888;">Minor materials: $${c.minorMaterials.perUnit.toFixed(4)}/${c.cogs.unit} (not added to price)</div>
+                `}
+            </div>
+            
+            <!-- Pricing Formula -->
+            <div class="card">
+                <div class="card-head"><span class="card-title">📐 Pricing Formula</span></div>
+                ${s.pricingMethod === 'markup' ? `
+                    <div class="warn-box">
+                        <div style="font-size:0.75rem; margin-bottom:0.4rem;">Using <strong>MARKUP</strong> method:</div>
+                        <div class="formula">${s.pricingFormula}</div>
+                        <div class="formula">$${c.pricing.sellingPrice.toFixed(4)} = $${c.cogs.perUnit.toFixed(4)} × ${(1 + s.pricingFactor).toFixed(2)}</div>
+                    </div>
+                    <div class="alert alert-warning" style="margin-top:0.5rem;">
+                        ⚠️ 50% markup ≠ 50% margin. Actual margin: <strong>${(c.pricing.impliedMargin*100).toFixed(1)}%</strong>
+                    </div>
+                ` : `
+                    <div class="result">
+                        <div style="font-size:0.75rem; margin-bottom:0.4rem;">Using <strong>MARGIN</strong> method:</div>
+                        <div class="formula">${s.pricingFormula}</div>
+                        <div class="formula">$${c.pricing.sellingPrice.toFixed(4)} = $${c.cogs.perUnit.toFixed(4)} ÷ ${(1 - s.pricingFactor).toFixed(2)}</div>
+                    </div>
+                `}
+                
+                ${s.customerPricing ? `
+                    <div class="divider"></div>
+                    <div class="card-title" style="margin-bottom:0.4rem;">🏪 ${s.customerPricing.name}</div>
+                    <div class="bkd"><span>Dictated Price</span><span><strong>$${s.customerPricing.dictatedPrice.toFixed(2)}</strong></span></div>
+                    <div class="bkd"><span>Target Margin</span><span>${(s.customerPricing.targetMargin*100).toFixed(1)}%</span></div>
+                    <div class="bkd"><span>Actual Margin</span><span class="${s.customerPricing.actualMargin >= s.customerPricing.targetMargin ? 'text-success' : 'text-danger'}">${(s.customerPricing.actualMargin*100).toFixed(1)}%</span></div>
+                    <div class="bkd"><span>Margin Delta</span><span class="${s.customerPricing.marginDelta <= 0 ? 'text-success' : 'text-danger'}">${s.customerPricing.marginDelta > 0 ? '-' : '+'}${(Math.abs(s.customerPricing.marginDelta)*100).toFixed(1)}%</span></div>
+                ` : ''}
+            </div>
+        </div>
+        
+        <div class="grid grid-2">
+            <!-- Labor -->
+            <div class="card">
+                <div class="card-head"><span class="card-title">👷 Labor ($${c.labor.total.toFixed(2)} total)</span></div>
+                <table class="tbl">
+                    <thead><tr><th>Step</th><th>People</th><th>Hours</th><th>Cost</th></tr></thead>
+                    <tbody>
+                        ${c.labor.steps.filter(l => l.people > 0).map(l => `
+                            <tr><td>${l.name}</td><td>${l.people}</td><td>${l.hours}</td><td>$${l.cost.toFixed(2)}</td></tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <div class="bkd sub" style="margin-top:0.5rem;"><span>Labor / ${c.labor.unit}</span><span>$${c.labor.perUnit.toFixed(4)}</span></div>
+            </div>
+            
+            <!-- Production -->
+            <div class="card">
+                <div class="card-head"><span class="card-title">⚙️ Production</span></div>
+                <div class="bkd"><span>Pieces/Mold</span><span>${s.production.pcPerMold}</span></div>
+                <div class="bkd"><span>Molds/Min</span><span>${s.production.moldsPerMin}</span></div>
+                <div class="bkd"><span>Run Hours</span><span>${s.production.runHours}</span></div>
+                <div class="bkd"><span>oz/Piece</span><span>${s.production.ozPerPiece}</span></div>
+                <div class="divider"></div>
+                <div class="bkd"><span>Pieces/Shift</span><span><strong>${c.production.piecesPerShift.toLocaleString()}</strong></span></div>
+                <div class="bkd"><span>Total Lbs</span><span>${c.production.totalLbs.toFixed(2)}</span></div>
+                ${s.type === 'sup' ? `
+                    <div class="bkd"><span>SUPs/Shift</span><span><strong>${Math.round(c.production.supsPerShift).toLocaleString()}</strong></span></div>
+                    <div class="bkd"><span>Pallets/Day</span><span>${c.production.palletsPerDay?.toFixed(1) || s.palletConfig?.palletsPerDay?.toFixed(1)}</span></div>
+                ` : ''}
+                ${s.type === 'bulk' ? `
+                    <div class="bkd"><span>Bulk Boxes</span><span>${c.production.bulkBoxes}</span></div>
+                ` : ''}
+            </div>
+        </div>
+        
+        ${s.ingredientMethod === 'flavorStudio' && s.ingredientBOM ? `
+        <div class="card">
+            <div class="card-head"><span class="card-title">🧪 Flavor Studio Ingredients</span></div>
+            <div class="grid grid-2">
+                <div>
+                    <div style="font-weight:600; margin-bottom:0.4rem;">Shell</div>
+                    <div class="bkd"><span>${s.ingredientBOM.shell.name}</span><span>${s.ingredientBOM.shell.lbs.toFixed(2)} lbs = $${s.ingredientBOM.shell.extCost.toFixed(2)}</span></div>
+                    <div class="bkd sub"><span>Shell Total</span><span>$${s.ingredientBOM.totalShellCost.toFixed(2)}</span></div>
+                </div>
+                <div>
+                    <div style="font-weight:600; margin-bottom:0.4rem;">Filling</div>
+                    ${s.ingredientBOM.filling.map(f => `
+                        <div class="bkd"><span>${f.name}</span><span>${f.lbs?.toFixed(2) || '?'} lbs = $${f.extCost?.toFixed(2) || '?'}</span></div>
+                    `).join('')}
+                    <div class="bkd sub"><span>Filling Total</span><span>$${s.ingredientBOM.totalFillingCost.toFixed(2)}</span></div>
+                </div>
+            </div>
+            <div class="bkd total" style="margin-top:0.5rem;"><span>Total Ingredient Cost / Run</span><span>$${s.ingredientBOM.totalRunCost.toFixed(2)}</span></div>
+            <div class="bkd"><span>Per SUP (÷ ${Math.round(c.production.supsPerShift)})</span><span>$${c.ingredients.perSUP.toFixed(4)}</span></div>
+        </div>
+        ` : ''}
+        
+        ${s.notes ? `
+        <div class="card">
+            <div class="card-head"><span class="card-title">📝 Notes & Next Steps</span></div>
+            <ul style="margin-left:1rem; font-size:0.8rem;">
+                ${s.notes.map(n => `<li>${n}</li>`).join('')}
+            </ul>
+        </div>
+        ` : ''}
+    `;
+    
+    addChat('sys', `Viewing <strong>${s.name}</strong>. COGS: $${c.cogs.perUnit.toFixed(4)}/${c.cogs.unit}, Price: $${c.pricing.finalPrice.toFixed(4)}, Margin: ${(c.pricing.impliedMargin*100).toFixed(1)}%`);
+}
+
+function renderAuditReport() {
+    return `
+        <div class="header"><h1>📋 Spreadsheet Audit Report</h1></div>
+        
+        <div class="card">
+            <div class="card-head"><span class="card-title">🔴 Critical Findings</span></div>
+            
+            <div class="alert alert-danger">
+                <strong>PRICING METHOD INCONSISTENCY</strong><br>
+                CHW, LSL, Dan: Cell B22 labeled "margin/selling price" = 0.5, but formula is <code>COGS × (1 + B22)</code> = <strong>MARKUP</strong><br>
+                TJPBPBC: Cell B22 labeled "LMH Target margin" = 0.3, formula is <code>COGS ÷ (1 - B22)</code> = <strong>TRUE MARGIN</strong><br>
+                <em>50% markup = 33.3% margin, NOT 50%!</em>
+            </div>
+            
+            <div class="alert alert-danger">
+                <strong>TJPBPBC H19 ANOMALY</strong><br>
+                Cell H19 shows $1.00 for "Case pk 24ct". This is NOT divided by 24 in COGS formula.<br>
+                COGS = H17 ($0.2645) + H18 ($1.0458) + H19 (<strong>$1.00</strong>) + H20 ($0.10) = $2.41<br>
+                <em>If $1/case should be $1/24 per SUP = $0.0417, COGS would drop to $1.45!</em>
+            </div>
+            
+            <div class="alert alert-warning">
+                <strong>INGREDIENT COSTING METHODS VARY</strong><br>
+                • CHW: Plug $0.25/pc (cell N12)<br>
+                • LSL: Plug $0.15/pc (cell N12)<br>
+                • Dan: Actual BOM - IRCA Intenso @ $6.25/lb with 3% scrap factor<br>
+                • TJPBPBC: Flavor Studio hard-coded values (cells K14:M20)
+            </div>
+            
+            <div class="alert alert-warning">
+                <strong>MINOR MATERIALS TIMING</strong><br>
+                • CHW/LSL: Listed in B23:B27 but <strong>NOT added</strong> to H27 (H27 = H22)<br>
+                • Dan: Added AFTER markup (H29 = H22 + H25:H28)<br>
+                • TJPBPBC: Added AFTER margin (H27 = H22 + H23:H26)
+            </div>
+            
+            <div class="alert alert-info">
+                <strong>DAN'S UNIQUE STRUCTURE</strong><br>
+                • Component ratio: 55.27% Dandie Marshmallow / 44.73% Chocolate (not 60/40!)<br>
+                • Chocolate has +3% scrap factor applied<br>
+                • Pricing is PER FULL RUN ($4,534), not per piece<br>
+                • Labels at $0.25/box (55 boxes), not per pallet
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-head"><span class="card-title">📊 Scenario Comparison Matrix</span></div>
+            <table class="tbl">
+                <thead>
+                    <tr><th>Attribute</th><th>CHW</th><th>LSL</th><th>Dan</th><th>TJPBPBC</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Type</td><td>Tray</td><td>Tray</td><td>Bulk</td><td>SUP</td></tr>
+                    <tr><td>Pricing Method</td><td><span class="tag tag-info">Markup</span></td><td><span class="tag tag-info">Markup</span></td><td><span class="tag tag-info">Markup</span></td><td><span class="tag tag-success">Margin</span></td></tr>
+                    <tr><td>Target Value</td><td>50%</td><td>50%</td><td>50%</td><td>30%</td></tr>
+                    <tr><td>Actual Margin</td><td>33.3%</td><td>33.3%</td><td>33.3%</td><td>30.0%</td></tr>
+                    <tr><td>Ingredient Method</td><td>Plug $0.25</td><td>Plug $0.15</td><td>BOM</td><td>Flavor Studio</td></tr>
+                    <tr><td>Costing Unit</td><td>piece</td><td>piece</td><td>run</td><td>SUP</td></tr>
+                    <tr><td>Minor Mtl Added</td><td>❌ No</td><td>❌ No</td><td>✅ Yes</td><td>✅ Yes</td></tr>
+                    <tr><td>Customer Price</td><td>—</td><td>—</td><td>—</td><td>TJ's $4.99</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="card">
+            <div class="card-head"><span class="card-title">✅ Recommendations</span></div>
+            <ol style="margin-left:1.25rem; font-size:0.85rem; line-height:1.8;">
+                <li><strong>Standardize on TRUE MARGIN</strong> - Convert CHW/LSL/Dan to margin-based pricing</li>
+                <li><strong>Investigate TJPBPBC H19</strong> - Is $1.00 per SUP correct, or should it be $1.00 ÷ 24?</li>
+                <li><strong>Define pallet configs</strong> - CHW/LSL/Dan missing ti/hi specs</li>
+                <li><strong>Replace plug values</strong> - Use actual Fishbowl BOMs for CHW/LSL</li>
+                <li><strong>Clarify minor material timing</strong> - Should they be in COGS or added after?</li>
+                <li><strong>Dual pricing for all B2B</strong> - Add internal target vs customer price like TJPBPBC</li>
+            </ol>
+        </div>
+    `;
+}
+
+function renderUploadBOM() {
+    return `
+        <div class="header"><h1>📄 Upload Fishbowl BOM</h1></div>
+        
+        <div class="grid grid-2">
+            <div class="card">
+                <div class="card-head"><span class="card-title">Upload File</span></div>
+                <div class="upload" onclick="document.getElementById('bomFile').click()">
+                    <input type="file" id="bomFile" accept=".csv,.xlsx,.xls" onchange="handleBOMUpload(this.files[0])">
+                    <div style="font-size:2rem; margin-bottom:0.5rem;">📁</div>
+                    <div><strong>Click to upload</strong> or drag & drop</div>
+                    <div class="text-muted" style="margin-top:0.3rem;">CSV, XLSX from Fishbowl BOM Export</div>
+                </div>
+                <div id="bomResult" style="margin-top:0.75rem;"></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-head"><span class="card-title">Expected Columns</span></div>
+                <table class="tbl">
+                    <thead><tr><th>Column</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>BOMNumber</code></td><td>BOM identifier</td></tr>
+                        <tr><td><code>PartNumber</code></td><td>Raw good part #</td></tr>
+                        <tr><td><code>Description</code></td><td>Part description</td></tr>
+                        <tr><td><code>Quantity</code></td><td>Qty needed</td></tr>
+                        <tr><td><code>UOM</code></td><td>Unit (lb, ea, oz)</td></tr>
+                    </tbody>
+                </table>
+                <div class="alert alert-info" style="margin-top:0.75rem;">
+                    <strong>Fishbowl:</strong> File → Export → Bill of Materials
+                </div>
+            </div>
+        </div>
+        
+        ${UPLOADS.boms.length > 0 ? `
+        <div class="card">
+            <div class="card-head"><span class="card-title">Uploaded BOMs</span></div>
+            <table class="tbl">
+                <thead><tr><th>File</th><th>Items</th><th>Uploaded</th><th></th></tr></thead>
+                <tbody>
+                    ${UPLOADS.boms.map((b, i) => `
+                        <tr>
+                            <td>${b.name}</td>
+                            <td>${b.items.length}</td>
+                            <td>${b.uploadedAt}</td>
+                            <td><button class="btn btn-sm btn-primary" onclick="createFromBOM(${i})">Create Scenario</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        ` : ''}
+    `;
+}
+
+function renderUploadFlavor() {
+    return `
+        <div class="header"><h1>🧪 Upload Flavor Studio Export</h1></div>
+        
+        <div class="grid grid-2">
+            <div class="card">
+                <div class="card-head"><span class="card-title">Upload File</span></div>
+                <div class="upload" onclick="document.getElementById('flavorFile').click()">
+                    <input type="file" id="flavorFile" accept=".csv,.xlsx,.xls" onchange="handleFlavorUpload(this.files[0])">
+                    <div style="font-size:2rem; margin-bottom:0.5rem;">🧪</div>
+                    <div><strong>Click to upload</strong> Flavor Studio recipe</div>
+                    <div class="text-muted" style="margin-top:0.3rem;">CSV, XLSX with ingredient breakdown</div>
+                </div>
+                <div id="flavorResult" style="margin-top:0.75rem;"></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-head"><span class="card-title">Expected Format</span></div>
+                <p style="font-size:0.8rem; color:#888; margin-bottom:0.75rem;">
+                    Flavor Studio exports typically include shell and filling ingredient breakdowns with lbs and extended costs.
+                </p>
+                <table class="tbl">
+                    <thead><tr><th>Column</th><th>Example</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>Component</code></td><td>Shell, Filling</td></tr>
+                        <tr><td><code>Ingredient</code></td><td>Compound, PB, Invert</td></tr>
+                        <tr><td><code>Lbs</code></td><td>3118.50</td></tr>
+                        <tr><td><code>ExtCost</code></td><td>5731.43</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+function renderUploadCosts() {
+    return `
+        <div class="header"><h1>💰 Upload Ingredient Costs</h1></div>
+        
+        <div class="grid grid-2">
+            <div class="card">
+                <div class="card-head"><span class="card-title">Upload Cost Sheet</span></div>
+                <div class="upload" onclick="document.getElementById('costFile').click()">
+                    <input type="file" id="costFile" accept=".csv,.xlsx,.xls" onchange="handleCostUpload(this.files[0])">
+                    <div style="font-size:2rem; margin-bottom:0.5rem;">💰</div>
+                    <div><strong>Click to upload</strong> Fishbowl pricing export</div>
+                    <div class="text-muted" style="margin-top:0.3rem;">Updates ingredient library costs</div>
+                </div>
+                <div id="costResult" style="margin-top:0.75rem;"></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-head"><span class="card-title">Expected Columns</span></div>
+                <table class="tbl">
+                    <thead><tr><th>Column</th><th>Description</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>PartNumber</code></td><td>SKU</td></tr>
+                        <tr><td><code>Description</code></td><td>Name</td></tr>
+                        <tr><td><code>StandardCost</code></td><td>Current cost</td></tr>
+                        <tr><td><code>UOM</code></td><td>lb, oz, ea</td></tr>
+                    </tbody>
+                </table>
+                <div class="alert alert-info" style="margin-top:0.75rem;">
+                    <strong>Fishbowl:</strong> Data → Export → Part, Product and Vendor Pricing
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderIngredientLib() {
+    return `
+        <div class="header">
+            <h1>🍫 Ingredient Library</h1>
+            <button class="btn btn-outline" onclick="showView('uploadCosts')">📤 Import from Fishbowl</button>
+        </div>
+        
+        <div class="card">
+            <div class="card-head">
+                <span class="card-title">Current Ingredients</span>
+                <button class="btn btn-sm btn-primary" onclick="addIngredient()">+ Add</button>
+            </div>
+            <table class="tbl">
+                <thead><tr><th>SKU</th><th>Name</th><th>Cost/lb</th><th>UOM</th><th>Source</th><th></th></tr></thead>
+                <tbody>
+                    ${INGREDIENTS.map((ing, i) => `
+                        <tr>
+                            <td><input type="text" value="${ing.sku}" onchange="INGREDIENTS[${i}].sku=this.value;debouncedSave()" style="width:100px;"></td>
+                            <td><input type="text" value="${ing.name}" onchange="INGREDIENTS[${i}].name=this.value;debouncedSave()" style="width:150px;"></td>
+                            <td><input type="number" step="0.01" value="${ing.costPerLb}" onchange="INGREDIENTS[${i}].costPerLb=parseFloat(this.value);debouncedSave()" style="width:70px;"></td>
+                            <td>${ing.uom}</td>
+                            <td><span class="tag tag-info">${ing.source}</span></td>
+                            <td><button class="btn btn-sm" style="color:#ef4444;" onclick="INGREDIENTS.splice(${i},1);debouncedSave();showView('ingredientLib');">×</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function addIngredient() {
+    INGREDIENTS.push({ sku: 'NEW-SKU', name: 'New Ingredient', costPerLb: 0, uom: 'lb', source: 'Manual' });
+    debouncedSave();
+    showView('ingredientLib');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LABOR RATES CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function renderLaborConfig() {
+    return `
+        <div class="header">
+            <h1>👷 Labor Rates Configuration</h1>
+        </div>
+        
+        <div class="card">
+            <div class="card-head"><span class="card-title">Default Labor Rate</span></div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Hourly Rate ($)</label>
+                    <input type="number" step="0.50" class="form-input form-highlight" value="${CONFIG.defaultLaborRate}" 
+                           onchange="CONFIG.defaultLaborRate=parseFloat(this.value); updateAllLaborRates();" style="width:120px;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">oz per lb</label>
+                    <input type="number" class="form-input" value="${CONFIG.ozPerLb}" 
+                           onchange="CONFIG.ozPerLb=parseFloat(this.value);debouncedSave();" style="width:80px;">
+                </div>
+            </div>
+        </div>
+        
+        ${Object.entries(SCENARIOS).map(([id, s]) => `
+        <div class="card">
+            <div class="card-head">
+                <span class="card-title">${s.name} Labor Steps</span>
+                <button class="btn btn-sm btn-primary" onclick="addLaborStep('${id}')">+ Add Step</button>
+            </div>
+            <table class="tbl">
+                <thead><tr><th>Step Name</th><th>People</th><th>Hours</th><th>Rate</th><th>Cost</th><th></th></tr></thead>
+                <tbody>
+                    ${s.labor.map((l, i) => `
+                        <tr>
+                            <td><input type="text" value="${l.name}" onchange="SCENARIOS['${id}'].labor[${i}].name=this.value;debouncedSave()" style="width:180px;"></td>
+                            <td><input type="number" value="${l.people}" min="0" onchange="SCENARIOS['${id}'].labor[${i}].people=parseInt(this.value);debouncedSave();showView('laborConfig');" style="width:50px;"></td>
+                            <td><input type="number" value="${l.hours}" min="0" step="0.5" onchange="SCENARIOS['${id}'].labor[${i}].hours=parseFloat(this.value);debouncedSave();showView('laborConfig');" style="width:50px;"></td>
+                            <td>$<input type="number" value="${l.rate}" step="0.50" onchange="SCENARIOS['${id}'].labor[${i}].rate=parseFloat(this.value);debouncedSave();showView('laborConfig');" style="width:55px;"></td>
+                            <td class="text-success">$${(l.people * l.hours * l.rate).toFixed(2)}</td>
+                            <td><button class="btn btn-sm" style="color:#ef4444;" onclick="SCENARIOS['${id}'].labor.splice(${i},1);debouncedSave();showView('laborConfig');">×</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:600; background:rgba(255,255,255,0.03);">
+                        <td colspan="4">Total Labor Cost</td>
+                        <td class="text-success">$${s.labor.reduce((sum, l) => sum + (l.people * l.hours * l.rate), 0).toFixed(2)}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        `).join('')}
+    `;
+}
+
+function addLaborStep(scenarioId) {
+    SCENARIOS[scenarioId].labor.push({ name: 'New Step', people: 1, hours: 1, rate: CONFIG.defaultLaborRate });
+    debouncedSave();
+    showView('laborConfig');
+}
+
+function updateAllLaborRates() {
+    Object.values(SCENARIOS).forEach(s => {
+        s.labor.forEach(l => l.rate = CONFIG.defaultLaborRate);
+    });
+    debouncedSave();
+    showView('laborConfig');
+    addChat('sys', `Updated all labor rates to $${CONFIG.defaultLaborRate}/hr`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PACKAGING CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function renderPackagingConfig() {
+    return `
+        <div class="header">
+            <h1>📦 Packaging Configuration</h1>
+        </div>
+        
+        ${Object.entries(SCENARIOS).map(([id, s]) => `
+        <div class="card">
+            <div class="card-head">
+                <span class="card-title">${s.name} Packaging</span>
+                <button class="btn btn-sm btn-primary" onclick="addPackagingItem('${id}')">+ Add Item</button>
+            </div>
+            <table class="tbl">
+                <thead><tr><th>Item</th><th>Unit Cost</th><th>Per</th><th>Divisor</th><th>Cost/Piece</th><th></th></tr></thead>
+                <tbody>
+                    ${s.packaging.map((p, i) => {
+                        const perPiece = p.divisor ? (p.unitCost / p.divisor) : (p.perSUP || p.unitCost);
+                        return `
+                        <tr>
+                            <td><input type="text" value="${p.name}" onchange="SCENARIOS['${id}'].packaging[${i}].name=this.value;debouncedSave()" style="width:150px;"></td>
+                            <td>$<input type="number" step="0.001" value="${p.unitCost}" onchange="SCENARIOS['${id}'].packaging[${i}].unitCost=parseFloat(this.value);debouncedSave();showView('packagingConfig');" style="width:70px;"></td>
+                            <td><input type="text" value="${p.per || 'piece'}" onchange="SCENARIOS['${id}'].packaging[${i}].per=this.value;debouncedSave()" style="width:60px;"></td>
+                            <td><input type="number" value="${p.divisor || 1}" min="1" onchange="SCENARIOS['${id}'].packaging[${i}].divisor=parseInt(this.value);debouncedSave();showView('packagingConfig');" style="width:50px;"></td>
+                            <td class="text-warning">$${perPiece.toFixed(6)}</td>
+                            <td><button class="btn btn-sm" style="color:#ef4444;" onclick="SCENARIOS['${id}'].packaging.splice(${i},1);debouncedSave();showView('packagingConfig');">×</button></td>
+                        </tr>
+                    `}).join('')}
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:600; background:rgba(255,255,255,0.03);">
+                        <td colspan="4">Total Packaging / ${s.type === 'sup' ? 'SUP' : 'piece'}</td>
+                        <td class="text-warning">$${s.packaging.reduce((sum, p) => sum + (p.divisor ? p.unitCost/p.divisor : (p.perSUP || p.unitCost)), 0).toFixed(6)}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        `).join('')}
+        
+        <div class="alert alert-info">
+            <strong>How it works:</strong> Cost/Piece = Unit Cost ÷ Divisor<br>
+            Example: $0.621 box ÷ 64 pieces per case = $0.0097/piece
+        </div>
+    `;
+}
+
+function addPackagingItem(scenarioId) {
+    SCENARIOS[scenarioId].packaging.push({ name: 'New Item', unitCost: 0.10, per: 'piece', divisor: 1 });
+    debouncedSave();
+    showView('packagingConfig');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PALLET SPECS CONFIGURATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function renderPalletConfig() {
+    return `
+        <div class="header">
+            <h1>🎨 Pallet Specifications</h1>
+        </div>
+        
+        <div class="alert alert-info">
+            <strong>Why this matters:</strong> Pallet configuration determines how minor materials (shrink wrap, pallets, labels) 
+            are allocated per unit. More units per pallet = lower cost per piece.
+        </div>
+        
+        ${Object.entries(SCENARIOS).map(([id, s]) => {
+            const pc = s.palletConfig || {};
+            const mm = s.minorMaterials || [];
+            const unitsPerPallet = pc.units || s.units?.perPallet || 1;
+            
+            return `
+            <div class="card">
+                <div class="card-head">
+                    <span class="card-title">${s.name}</span>
+                    <span class="tag tag-purple">${s.type}</span>
+                </div>
+                
+                <div class="grid grid-4">
+                    <div class="form-group">
+                        <label class="form-label">Ti × Hi</label>
+                        <input type="text" class="form-input" value="${pc.tiHi || 'not set'}" 
+                               onchange="if(!SCENARIOS['${id}'].palletConfig)SCENARIOS['${id}'].palletConfig={};SCENARIOS['${id}'].palletConfig.tiHi=this.value;">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Cases/Pallet</label>
+                        <input type="number" class="form-input form-highlight" value="${pc.cases || ''}" 
+                               onchange="if(!SCENARIOS['${id}'].palletConfig)SCENARIOS['${id}'].palletConfig={};SCENARIOS['${id}'].palletConfig.cases=parseInt(this.value);recalcPalletUnits('${id}');">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Units/Case</label>
+                        <input type="number" class="form-input" value="${s.units?.perCase || s.units?.perTray || 1}" 
+                               onchange="SCENARIOS['${id}'].units.perCase=parseInt(this.value);recalcPalletUnits('${id}');">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Units/Pallet</label>
+                        <input type="number" class="form-input form-highlight" value="${unitsPerPallet}" id="palletUnits_${id}"
+                               onchange="if(!SCENARIOS['${id}'].palletConfig)SCENARIOS['${id}'].palletConfig={};SCENARIOS['${id}'].palletConfig.units=parseInt(this.value);if(SCENARIOS['${id}'].units)SCENARIOS['${id}'].units.perPallet=parseInt(this.value);showView('palletConfig');">
+                    </div>
+                </div>
+                
+                <div class="divider"></div>
+                <div style="font-weight:600; margin-bottom:0.5rem;">Minor Materials (per pallet)</div>
+                <table class="tbl">
+                    <thead><tr><th>Item</th><th>Cost/Pallet</th><th>Divisor</th><th>Cost/Unit</th><th></th></tr></thead>
+                    <tbody>
+                        ${mm.map((m, i) => {
+                            const perUnit = m.perSUP || m.perPiece || (m.cost / (m.divisor || unitsPerPallet));
+                            return `
+                            <tr>
+                                <td><input type="text" value="${m.name}" onchange="SCENARIOS['${id}'].minorMaterials[${i}].name=this.value" style="width:140px;"></td>
+                                <td>$<input type="number" step="0.01" value="${m.cost}" onchange="SCENARIOS['${id}'].minorMaterials[${i}].cost=parseFloat(this.value);showView('palletConfig');" style="width:60px;"></td>
+                                <td><input type="number" value="${m.divisor || unitsPerPallet}" onchange="SCENARIOS['${id}'].minorMaterials[${i}].divisor=parseInt(this.value);showView('palletConfig');" style="width:60px;"></td>
+                                <td class="text-success">$${perUnit.toFixed(6)}</td>
+                                <td><button class="btn btn-sm" style="color:#ef4444;" onclick="SCENARIOS['${id}'].minorMaterials.splice(${i},1);showView('palletConfig');">×</button></td>
+                            </tr>
+                        `}).join('')}
+                    </tbody>
+                    <tfoot>
+                        <tr style="font-weight:600; background:rgba(255,255,255,0.03);">
+                            <td colspan="3">Total Minor Materials / Unit</td>
+                            <td class="text-success">$${mm.reduce((sum, m) => sum + (m.perSUP || m.perPiece || m.cost / (m.divisor || unitsPerPallet)), 0).toFixed(6)}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <button class="btn btn-sm btn-outline" style="margin-top:0.5rem;" onclick="addMinorMaterial('${id}')">+ Add Minor Material</button>
+                
+                <div class="divider"></div>
+                <div class="form-group">
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                        <input type="checkbox" ${s.minorMaterialsAddedToPrice ? 'checked' : ''} 
+                               onchange="SCENARIOS['${id}'].minorMaterialsAddedToPrice=this.checked;">
+                        <span>Add minor materials to final price (after ${s.pricingMethod})</span>
+                    </label>
+                </div>
+            </div>
+        `}).join('')}
+    `;
+}
+
+function recalcPalletUnits(scenarioId) {
+    const s = SCENARIOS[scenarioId];
+    if (s.palletConfig?.cases && s.units?.perCase) {
+        const units = s.palletConfig.cases * s.units.perCase;
+        s.palletConfig.units = units;
+        if (s.units) s.units.perPallet = units;
+    }
+    showView('palletConfig');
+}
+
+function addMinorMaterial(scenarioId) {
+    if (!SCENARIOS[scenarioId].minorMaterials) SCENARIOS[scenarioId].minorMaterials = [];
+    const units = SCENARIOS[scenarioId].palletConfig?.units || SCENARIOS[scenarioId].units?.perPallet || 1000;
+    SCENARIOS[scenarioId].minorMaterials.push({ name: 'New Material', cost: 1.00, per: 'pallet', divisor: units });
+    showView('palletConfig');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GOAL SOLVER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function renderGoalSolver() {
+    return `
+        <div class="header">
+            <h1>🎯 Goal Solver</h1>
+        </div>
+        
+        <div class="grid grid-2">
+            <div class="card">
+                <div class="card-head"><span class="card-title">Revenue Goal → Units Needed</span></div>
+                <div class="form-group">
+                    <label class="form-label">Select Scenario</label>
+                    <select class="form-select" id="goalScenario" onchange="calcGoal()">
+                        ${Object.entries(SCENARIOS).map(([id, s]) => `<option value="${id}">${s.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Revenue Goal ($)</label>
+                    <input type="number" class="form-input form-highlight" id="goalRevenue" value="100000" oninput="calcGoal()">
+                </div>
+                <div class="result" id="goalResult"></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-head"><span class="card-title">Target Price → Required Margin</span></div>
+                <div class="form-group">
+                    <label class="form-label">Select Scenario</label>
+                    <select class="form-select" id="priceScenario" onchange="calcTargetPrice()">
+                        ${Object.entries(SCENARIOS).map(([id, s]) => `<option value="${id}">${s.name}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Selling Price ($)</label>
+                    <input type="number" step="0.01" class="form-input form-highlight" id="targetPrice" value="1.00" oninput="calcTargetPrice()">
+                </div>
+                <div class="result" id="priceResult"></div>
+            </div>
+        </div>
+    `;
+}
+
+function renderNewScenario() {
+    return `
+        <div class="header">
+            <h1>➕ New Scenario</h1>
+        </div>
+        
+        <div class="card">
+            <div class="card-head"><span class="card-title">Create New Scenario</span></div>
+            
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Scenario Name</label>
+                    <input type="text" class="form-input form-highlight" id="newName" placeholder="e.g., New Customer PB Cups">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Product Type</label>
+                    <select class="form-select" id="newType">
+                        <option value="tray">Tray (piece-based)</option>
+                        <option value="sup">SUP (bag-based)</option>
+                        <option value="bulk">Bulk (run-based)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label">Pricing Method</label>
+                    <select class="form-select" id="newPricingMethod">
+                        <option value="margin">Margin (recommended)</option>
+                        <option value="markup">Markup</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target %</label>
+                    <input type="number" class="form-input form-highlight" id="newPricingFactor" value="30" min="0" max="100">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Start From Template</label>
+                <select class="form-select" id="newTemplate">
+                    <option value="">— Blank scenario —</option>
+                    ${Object.entries(SCENARIOS).map(([id, s]) => `<option value="${id}">${s.name}</option>`).join('')}
+                </select>
+            </div>
+            
+            <div class="divider"></div>
+            <button class="btn btn-primary" onclick="createNewScenario()">Create Scenario</button>
+        </div>
+        
+        <div class="card">
+            <div class="card-head"><span class="card-title">Or Import from Upload</span></div>
+            <p style="font-size:0.85rem; color:#888; margin-bottom:0.75rem;">
+                Upload a Fishbowl BOM or Flavor Studio export to auto-populate ingredients.
+            </p>
+            <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-outline" onclick="showView('uploadBOM')">📄 Upload BOM</button>
+                <button class="btn btn-outline" onclick="showView('uploadFlavor')">🧪 Upload Flavor Studio</button>
+            </div>
+        </div>
+    `;
+}
+
+function createNewScenario() {
+    const name = document.getElementById('newName').value.trim();
+    if (!name) { alert('Please enter a scenario name'); return; }
+    
+    const type = document.getElementById('newType').value;
+    const pricingMethod = document.getElementById('newPricingMethod').value;
+    const pricingFactor = parseFloat(document.getElementById('newPricingFactor').value) / 100;
+    const templateId = document.getElementById('newTemplate').value;
+    
+    const newId = 'NEW_' + Date.now().toString(36).toUpperCase();
+    
+    if (templateId && SCENARIOS[templateId]) {
+        // Clone from template
+        SCENARIOS[newId] = JSON.parse(JSON.stringify(SCENARIOS[templateId]));
+        SCENARIOS[newId].id = newId;
+        SCENARIOS[newId].name = name;
+        SCENARIOS[newId].pricingMethod = pricingMethod;
+        SCENARIOS[newId].pricingFactor = pricingFactor;
+        SCENARIOS[newId].pricingFormula = pricingMethod === 'margin' 
+            ? `COGS ÷ (1 - ${pricingFactor})` 
+            : `COGS × (1 + ${pricingFactor})`;
+    } else {
+        // Create blank scenario
+        const units = type === 'tray' ? { perTray: 16, perCase: 64, perPallet: 6144 }
+                    : type === 'sup' ? { perSUP: 19, perCase: 24, perPallet: 1008 }
+                    : { perBulkBox: 10 };
+        
+        SCENARIOS[newId] = {
+            id: newId,
+            name: name,
+            type: type,
+            production: { pcPerMold: 36, moldsPerMin: 1, minPerHr: 60, runHours: 6, ozPerPiece: 0.5 },
+            units: units,
+            labor: [
+                { name: 'Prep/Clean Up', people: 2, hours: 3, rate: CONFIG.defaultLaborRate },
+                { name: 'Production', people: 4, hours: 6, rate: CONFIG.defaultLaborRate },
+                { name: 'Packaging', people: 2, hours: 6, rate: CONFIG.defaultLaborRate }
+            ],
+            packaging: [
+                { name: 'Primary Packaging', unitCost: 0.10, per: 'piece', divisor: 1 }
+            ],
+            ingredientMethod: 'plug',
+            ingredientPlugPerPiece: 0.20,
+            pricingMethod: pricingMethod,
+            pricingFactor: pricingFactor,
+            pricingFormula: pricingMethod === 'margin' 
+                ? `COGS ÷ (1 - ${pricingFactor})` 
+                : `COGS × (1 + ${pricingFactor})`,
+            minorMaterials: [],
+            minorMaterialsAddedToPrice: true,
+            palletConfig: { tiHi: 'TBD', cases: 96, units: units.perPallet || 6144 }
+        };
+    }
+    
+    debouncedSave();
+    addChat('sys', `Created new scenario: ${name}`);
+    viewScenario(newId);
+}
+
+function calcGoal() {
+    const id = document.getElementById('goalScenario').value;
+    const revenue = parseFloat(document.getElementById('goalRevenue').value) || 0;
+    const c = calculate(id);
+    
+    const unitsNeeded = revenue / c.pricing.finalPrice;
+    const daysNeeded = unitsNeeded / c.production.piecesPerShift;
+    const profit = revenue - (unitsNeeded * c.cogs.perUnit);
+    
+    document.getElementById('goalResult').innerHTML = `
+        <div class="grid grid-2" style="text-align:center; margin-bottom:0.75rem;">
+            <div>
+                <div class="metric-label">Units Needed</div>
+                <div class="metric-sm">${Math.ceil(unitsNeeded).toLocaleString()}</div>
+            </div>
+            <div>
+                <div class="metric-label">Production Days</div>
+                <div class="metric-sm">${daysNeeded.toFixed(1)}</div>
+            </div>
+        </div>
+        <div class="bkd"><span>Unit Price</span><span>$${c.pricing.finalPrice.toFixed(4)}</span></div>
+        <div class="bkd"><span>COGS Total</span><span>$${(unitsNeeded * c.cogs.perUnit).toLocaleString(undefined, {maximumFractionDigits:0})}</span></div>
+        <div class="bkd sub"><span>Gross Profit</span><span class="text-success">$${profit.toLocaleString(undefined, {maximumFractionDigits:0})}</span></div>
+    `;
+}
+
+function calcTargetPrice() {
+    const id = document.getElementById('priceScenario').value;
+    const targetPrice = parseFloat(document.getElementById('targetPrice').value) || 0;
+    const c = calculate(id);
+    
+    const margin = (targetPrice - c.cogs.perUnit) / targetPrice;
+    const markup = (targetPrice - c.cogs.perUnit) / c.cogs.perUnit;
+    const profit = targetPrice - c.cogs.perUnit;
+    const marginClass = margin >= 0.30 ? 'text-success' : margin >= 0.20 ? 'text-warning' : 'text-danger';
+    
+    document.getElementById('priceResult').innerHTML = `
+        <div class="grid grid-2" style="text-align:center; margin-bottom:0.75rem;">
+            <div>
+                <div class="metric-label">Gross Margin</div>
+                <div class="metric-sm ${marginClass}">${(margin * 100).toFixed(1)}%</div>
+            </div>
+            <div>
+                <div class="metric-label">Markup</div>
+                <div class="metric-sm">${(markup * 100).toFixed(1)}%</div>
+            </div>
+        </div>
+        <div class="bkd"><span>COGS</span><span>$${c.cogs.perUnit.toFixed(4)}</span></div>
+        <div class="bkd"><span>Target Price</span><span>$${targetPrice.toFixed(4)}</span></div>
+        <div class="bkd sub"><span>Profit/Unit</span><span class="${marginClass}">$${profit.toFixed(4)}</span></div>
+        ${margin < 0.25 ? `<div class="alert alert-warning" style="margin-top:0.5rem;">⚠️ Below 25% margin threshold</div>` : ''}
+    `;
+}
+
+function renderMarginCalc() {
+    return `
+        <div class="header"><h1>🧮 Margin / Markup Calculator</h1></div>
+        
+        <div class="grid grid-2">
+            <div class="card">
+                <div class="card-head"><span class="card-title">Margin → Price</span></div>
+                <div class="form-group">
+                    <label class="form-label">COGS ($)</label>
+                    <input type="number" step="0.0001" class="form-input form-highlight" id="mc1Cogs" value="0.4750" oninput="calcM1()">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Margin: <span id="mc1Val">30%</span></label>
+                    <input type="range" class="slider" id="mc1Margin" min="10" max="60" value="30" oninput="calcM1()">
+                </div>
+                <div class="result" id="mc1Result"></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-head"><span class="card-title">Price → Margin</span></div>
+                <div class="form-group">
+                    <label class="form-label">COGS ($)</label>
+                    <input type="number" step="0.0001" class="form-input form-highlight" id="mc2Cogs" value="0.4750" oninput="calcM2()">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Selling Price ($)</label>
+                    <input type="number" step="0.0001" class="form-input form-highlight" id="mc2Price" value="0.7125" oninput="calcM2()">
+                </div>
+                <div class="result" id="mc2Result"></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-head"><span class="card-title">📐 Reference Table</span></div>
+            <table class="tbl">
+                <thead><tr><th>Margin</th><th>Markup</th><th>Formula</th><th>$1 COGS →</th></tr></thead>
+                <tbody>
+                    <tr><td>20%</td><td>25%</td><td>÷0.80 or ×1.25</td><td>$1.25</td></tr>
+                    <tr><td>25%</td><td>33.3%</td><td>÷0.75 or ×1.333</td><td>$1.33</td></tr>
+                    <tr style="background:rgba(16,185,129,0.1);"><td><strong>30%</strong></td><td><strong>42.9%</strong></td><td><strong>÷0.70 or ×1.429</strong></td><td><strong>$1.43</strong></td></tr>
+                    <tr style="background:rgba(245,158,11,0.1);"><td><strong>33.3%</strong></td><td><strong>50%</strong></td><td><strong>÷0.667 or ×1.50</strong></td><td><strong>$1.50</strong></td></tr>
+                    <tr><td>40%</td><td>66.7%</td><td>÷0.60 or ×1.667</td><td>$1.67</td></tr>
+                    <tr><td>50%</td><td>100%</td><td>÷0.50 or ×2.00</td><td>$2.00</td></tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function calcM1() {
+    const cogs = parseFloat(document.getElementById('mc1Cogs').value) || 0;
+    const marginPct = parseFloat(document.getElementById('mc1Margin').value) || 0;
+    document.getElementById('mc1Val').textContent = marginPct + '%';
+    const margin = marginPct / 100;
+    const price = cogs / (1 - margin);
+    const markup = margin / (1 - margin);
+    const profit = price - cogs;
+    document.getElementById('mc1Result').innerHTML = `
+        <div class="grid grid-3" style="text-align:center;">
+            <div><div class="metric-label">Selling Price</div><div class="metric-xs text-success">$${price.toFixed(4)}</div></div>
+            <div><div class="metric-label">Markup</div><div class="metric-xs">${(markup*100).toFixed(1)}%</div></div>
+            <div><div class="metric-label">Profit</div><div class="metric-xs text-warning">$${profit.toFixed(4)}</div></div>
+        </div>
+        <div class="formula" style="margin-top:0.5rem; text-align:center;">$${price.toFixed(4)} = $${cogs.toFixed(4)} ÷ (1 - ${margin.toFixed(2)})</div>
+    `;
+}
+
+function calcM2() {
+    const cogs = parseFloat(document.getElementById('mc2Cogs').value) || 0;
+    const price = parseFloat(document.getElementById('mc2Price').value) || 0;
+    const margin = price > 0 ? (price - cogs) / price : 0;
+    const markup = cogs > 0 ? (price - cogs) / cogs : 0;
+    const marginClass = margin >= 0.30 ? 'text-success' : margin >= 0.25 ? 'text-warning' : 'text-danger';
+    document.getElementById('mc2Result').innerHTML = `
+        <div class="grid grid-3" style="text-align:center;">
+            <div><div class="metric-label">Margin</div><div class="metric-xs ${marginClass}">${(margin*100).toFixed(1)}%</div></div>
+            <div><div class="metric-label">Markup</div><div class="metric-xs">${(markup*100).toFixed(1)}%</div></div>
+            <div><div class="metric-label">Profit</div><div class="metric-xs text-warning">$${(price-cogs).toFixed(4)}</div></div>
+        </div>
+    `;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FILE UPLOAD HANDLERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function handleBOMUpload(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            let data;
+            if (file.name.endsWith('.csv')) {
+                data = parseCSV(e.target.result);
+            } else {
+                const wb = XLSX.read(e.target.result, { type: 'binary' });
+                data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+            }
+            
+            const cols = detectColumns(data, ['PartNumber', 'Part', 'SKU'], ['Description', 'Name'], ['Quantity', 'Qty'], ['UOM', 'Unit']);
+            const items = data.map(row => ({
+                sku: row[cols.sku] || '',
+                name: row[cols.name] || '',
+                qty: parseFloat(row[cols.qty]) || 0,
+                uom: row[cols.uom] || 'ea'
+            })).filter(i => i.sku || i.name);
+            
+            UPLOADS.boms.push({ name: file.name, items, uploadedAt: new Date().toLocaleString() });
+            
+            document.getElementById('bomResult').innerHTML = `
+                <div class="alert alert-success">✅ Parsed ${items.length} items from ${file.name}</div>
+                <table class="tbl">
+                    <thead><tr><th>SKU</th><th>Name</th><th>Qty</th><th>UOM</th></tr></thead>
+                    <tbody>${items.slice(0, 8).map(i => `<tr><td>${i.sku}</td><td>${i.name}</td><td>${i.qty}</td><td>${i.uom}</td></tr>`).join('')}</tbody>
+                </table>
+                ${items.length > 8 ? `<div class="text-muted" style="margin-top:0.3rem;">...and ${items.length - 8} more</div>` : ''}
+            `;
+            addChat('sys', `Uploaded BOM: ${file.name} with ${items.length} ingredients`);
+        } catch (err) {
+            document.getElementById('bomResult').innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+        }
+    };
+    file.name.endsWith('.csv') ? reader.readAsText(file) : reader.readAsBinaryString(file);
+}
+
+function handleCostUpload(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            let data;
+            if (file.name.endsWith('.csv')) {
+                data = parseCSV(e.target.result);
+            } else {
+                const wb = XLSX.read(e.target.result, { type: 'binary' });
+                data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+            }
+            
+            const cols = detectColumns(data, ['PartNumber', 'Part', 'SKU'], ['Description', 'Name'], ['StandardCost', 'Cost', 'Price'], ['UOM', 'Unit']);
+            let updated = 0;
+            
+            data.forEach(row => {
+                const sku = row[cols.sku];
+                const cost = parseFloat(row[cols.cost]);
+                if (sku && !isNaN(cost)) {
+                    const existing = INGREDIENTS.find(i => i.sku === sku);
+                    if (existing) {
+                        existing.costPerLb = cost;
+                        updated++;
+                    } else {
+                        INGREDIENTS.push({ sku, name: row[cols.name] || sku, costPerLb: cost, uom: row[cols.uom] || 'lb', source: 'Upload' });
+                        updated++;
+                    }
+                }
+            });
+            
+            document.getElementById('costResult').innerHTML = `<div class="alert alert-success">✅ Updated ${updated} ingredient costs</div>`;
+            addChat('sys', `Updated ${updated} ingredient costs from ${file.name}`);
+        } catch (err) {
+            document.getElementById('costResult').innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+        }
+    };
+    file.name.endsWith('.csv') ? reader.readAsText(file) : reader.readAsBinaryString(file);
+}
+
+function parseCSV(text) {
+    const lines = text.split('\n').filter(l => l.trim());
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+    return lines.slice(1).map(line => {
+        const vals = line.split(',').map(v => v.trim().replace(/"/g, ''));
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = vals[i]);
+        return obj;
+    });
+}
+
+function detectColumns(data, ...colGroups) {
+    const keys = Object.keys(data[0] || {});
+    const result = {};
+    const names = ['sku', 'name', 'qty', 'cost', 'uom'];
+    colGroups.forEach((group, i) => {
+        result[names[i]] = keys.find(k => group.some(g => k.toLowerCase().includes(g.toLowerCase()))) || keys[i];
+    });
+    return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INTELLIGENT CHAT PROCESSOR v2
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let chatContext = { lastScenario: null, lastTopic: null };
+
+function addChat(type, content) {
+    const el = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = `msg ${type === 'user' ? 'user' : type === 'sys' ? 'sys' : 'bot'}`;
+    div.innerHTML = content;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+}
+
+function sendChat() {
+    const input = document.getElementById('chatInput');
+    const q = input.value.trim();
+    if (!q) return;
+    
+    addChat('user', q);
+    input.value = '';
+    
+    const response = processChat(q);
+    setTimeout(() => addChat('bot', response), 150);
+}
+
+function processChat(q) {
+    const ql = q.toLowerCase().trim();
+    const words = ql.split(/\s+/);
+    
+    // Intent detection
+    const intent = detectIntent(ql);
+    const scenario = detectScenario(ql) || chatContext.lastScenario;
+    const metric = detectMetric(ql);
+    
+    // Update context
+    if (scenario) chatContext.lastScenario = scenario;
+    if (intent.topic) chatContext.lastTopic = intent.topic;
+    
+    // Handle different intents
+    switch (intent.type) {
+        case 'explain': return handleExplain(scenario, metric, ql);
+        case 'compare': return handleCompare(ql);
+        case 'whatif': return handleWhatIf(scenario, ql);
+        case 'calculate': return handleCalculate(scenario, metric, ql);
+        case 'why': return handleWhy(scenario, metric, ql);
+        case 'how': return handleHow(scenario, metric, ql);
+        case 'list': return handleList(ql);
+        case 'definition': return handleDefinition(ql);
+        default: return handleGeneral(scenario, ql);
+    }
+}
+
+function detectIntent(q) {
+    // Why questions
+    if (/^why|how come|what causes|reason for/i.test(q)) 
+        return { type: 'why', topic: extractTopic(q) };
+    
+    // How questions
+    if (/^how (is|are|do|does|did|can|would|should|to)/i.test(q)) 
+        return { type: 'how', topic: extractTopic(q) };
+    
+    // What-if scenarios
+    if (/what if|what would|if .* (was|were|change|increase|decrease)|hypothetic/i.test(q)) 
+        return { type: 'whatif', topic: extractTopic(q) };
+    
+    // Comparisons
+    if (/compare|vs|versus|difference between|better|worse|higher|lower than/i.test(q)) 
+        return { type: 'compare', topic: extractTopic(q) };
+    
+    // Definitions
+    if (/what (is|are) (a |the )?(markup|margin|cogs|sup|pallet|ti.?hi|bom)/i.test(q)) 
+        return { type: 'definition', topic: extractTopic(q) };
+    
+    // Calculations
+    if (/calculate|compute|what('s| is) the|how much|total|sum/i.test(q)) 
+        return { type: 'calculate', topic: extractTopic(q) };
+    
+    // Explanations
+    if (/explain|break.?down|show me|walk.*through|detail|tell me about/i.test(q)) 
+        return { type: 'explain', topic: extractTopic(q) };
+    
+    // Lists
+    if (/list|show all|what are the|all the/i.test(q)) 
+        return { type: 'list', topic: extractTopic(q) };
+    
+    return { type: 'general', topic: extractTopic(q) };
+}
+
+function detectScenario(q) {
+    const ql = q.toLowerCase();
+    for (const [id, s] of Object.entries(SCENARIOS)) {
+        const nameParts = s.name.toLowerCase().split(/[\s()]+/);
+        if (ql.includes(id.toLowerCase())) return id;
+        if (nameParts.some(p => p.length > 2 && ql.includes(p))) return id;
+    }
+    // Check for pronouns referring to last scenario
+    if (/(it|this|that|its|the scenario|the product)/i.test(q) && chatContext.lastScenario) {
+        return chatContext.lastScenario;
+    }
+    return null;
+}
+
+function detectMetric(q) {
+    const ql = q.toLowerCase();
+    const metrics = {
+        cogs: /cogs|cost of goods|total cost|production cost/,
+        margin: /margin|profit.?percent|gross margin/,
+        markup: /markup|mark.?up/,
+        labor: /labor|labour|worker|people|hours|staff/,
+        packaging: /packaging|package|box|tray|cup|film|wrap/,
+        ingredients: /ingredient|material|chocolate|compound|recipe|bom/,
+        price: /price|pricing|sell|selling|revenue/,
+        production: /production|output|pieces|units|shift|daily|volume/,
+        pallet: /pallet|ti.?hi|cases|minor material|shrink|slip/,
+        customer: /customer|tj|trader|client|buyer/
+    };
+    
+    for (const [metric, pattern] of Object.entries(metrics)) {
+        if (pattern.test(ql)) return metric;
+    }
+    return null;
+}
+
+function extractTopic(q) {
+    // Remove common question words to get the topic
+    return q.replace(/^(why|how|what|when|where|who|is|are|do|does|did|can|would|should|the|a|an)\s+/gi, '').trim();
+}
+
+function handleExplain(scenarioId, metric, q) {
+    if (!scenarioId) {
+        return `Which scenario would you like me to explain? I have: ${Object.values(SCENARIOS).map(s => s.name).join(', ')}`;
+    }
+    
+    const c = calculate(scenarioId);
+    const s = c.scenario;
+    
+    if (metric === 'cogs' || /cogs|cost/i.test(q)) {
+        return `<strong>${s.name} COGS Breakdown (per ${c.cogs.unit}):</strong><br><br>
+            <table style="width:100%; font-size:0.85rem;">
+                <tr><td>Labor</td><td style="text-align:right;">$${c.cogs.labor.toFixed(4)}</td><td style="text-align:right; color:#666;">${(c.cogs.labor/c.cogs.perUnit*100).toFixed(1)}%</td></tr>
+                <tr><td>Packaging</td><td style="text-align:right;">$${c.cogs.packaging.toFixed(4)}</td><td style="text-align:right; color:#666;">${(c.cogs.packaging/c.cogs.perUnit*100).toFixed(1)}%</td></tr>
+                <tr><td>Ingredients</td><td style="text-align:right;">$${c.cogs.ingredients.toFixed(4)}</td><td style="text-align:right; color:#666;">${(c.cogs.ingredients/c.cogs.perUnit*100).toFixed(1)}%</td></tr>
+                <tr style="font-weight:bold; border-top:1px solid #444;"><td>Total</td><td style="text-align:right;">$${c.cogs.perUnit.toFixed(4)}</td><td></td></tr>
+            </table>
+            <br>The biggest cost driver is <strong>${c.cogs.ingredients > c.cogs.labor ? 'ingredients' : 'labor'}</strong> at ${Math.max(c.cogs.ingredients/c.cogs.perUnit, c.cogs.labor/c.cogs.perUnit) * 100 | 0}% of COGS.`;
+    }
+    
+    if (metric === 'labor' || /labor/i.test(q)) {
+        return `<strong>${s.name} Labor Breakdown:</strong><br><br>
+            ${c.labor.steps.filter(l => l.people > 0).map(l => 
+                `• ${l.name}: ${l.people} people × ${l.hours}h × $${l.rate} = <strong>$${l.cost.toFixed(2)}</strong>`
+            ).join('<br>')}<br><br>
+            Total labor: <strong>$${c.labor.total.toFixed(2)}</strong><br>
+            Per ${c.labor.unit}: <strong>$${c.labor.perUnit.toFixed(4)}</strong>`;
+    }
+    
+    if (metric === 'packaging' || /packaging/i.test(q)) {
+        return `<strong>${s.name} Packaging:</strong><br><br>
+            ${s.packaging.map(p => {
+                const perUnit = p.divisor ? (p.unitCost / p.divisor) : (p.perSUP || p.unitCost);
+                return `• ${p.name}: $${p.unitCost.toFixed(4)}/${p.per || 'unit'} ÷ ${p.divisor || 1} = <strong>$${perUnit.toFixed(6)}</strong>`;
+            }).join('<br>')}<br><br>
+            Total per ${c.cogs.unit}: <strong>$${c.packaging.perUnit.toFixed(4)}</strong>`;
+    }
+    
+    if (metric === 'ingredients' || /ingredient/i.test(q)) {
+        if (s.ingredientMethod === 'plug') {
+            return `<strong>${s.name} uses PLUG costing:</strong><br><br>
+                A simplified average of <strong>$${s.ingredientPlugPerPiece}/piece</strong>.<br><br>
+                This is a shortcut when you don't have detailed BOM data. The actual recipe breakdown isn't calculated - just an estimated cost per unit based on historical averages.`;
+        } else if (s.ingredientMethod === 'bom') {
+            return `<strong>${s.name} uses BOM costing:</strong><br><br>
+                ${s.ingredientBOM.map(i => `• ${i.name}: ${i.lbsUsed?.toFixed(2) || '?'} lbs × $${i.costPerLb}/lb = <strong>$${i.extCost?.toFixed(2) || '?'}</strong>`).join('<br>')}<br><br>
+                Component ratio: ${(s.componentRatio?.dandieMarshmallow*100).toFixed(1)}% marshmallow / ${(s.componentRatio?.chocolate*100).toFixed(1)}% chocolate<br>
+                Chocolate has +3% scrap factor applied.`;
+        } else if (s.ingredientMethod === 'flavorStudio') {
+            return `<strong>${s.name} uses Flavor Studio data:</strong><br><br>
+                <strong>Shell:</strong> $${s.ingredientBOM.totalShellCost.toFixed(2)}<br>
+                <strong>Filling:</strong> $${s.ingredientBOM.totalFillingCost.toFixed(2)}<br><br>
+                Total per run: <strong>$${s.ingredientBOM.totalRunCost.toFixed(2)}</strong><br>
+                Per SUP: <strong>$${c.ingredients.perSUP.toFixed(4)}</strong>`;
+        }
+    }
+    
+    if (metric === 'price' || metric === 'margin' || /pricing|margin/i.test(q)) {
+        return `<strong>${s.name} Pricing:</strong><br><br>
+            Method: <strong>${s.pricingMethod.toUpperCase()}</strong><br>
+            Formula: <code>${s.pricingFormula}</code><br><br>
+            COGS: $${c.cogs.perUnit.toFixed(4)}<br>
+            Selling: <strong>$${c.pricing.sellingPrice.toFixed(4)}</strong><br>
+            Margin: <strong>${(c.pricing.impliedMargin*100).toFixed(1)}%</strong><br>
+            Markup: ${(c.pricing.impliedMarkup*100).toFixed(1)}%
+            ${s.customerPricing ? `<br><br><strong>${s.customerPricing.name}:</strong> $${s.customerPricing.dictatedPrice} (${(s.customerPricing.actualMargin*100).toFixed(1)}% actual margin)` : ''}`;
+    }
+    
+    // General scenario overview
+    return `<strong>${s.name} Overview:</strong><br><br>
+        Type: ${s.type}<br>
+        Pricing: ${s.pricingMethod} (${(s.pricingFactor*100).toFixed(0)}%)<br>
+        COGS: $${c.cogs.perUnit.toFixed(4)}/${c.cogs.unit}<br>
+        Price: $${c.pricing.finalPrice.toFixed(4)}<br>
+        Margin: ${(c.pricing.impliedMargin*100).toFixed(1)}%<br>
+        Output: ${c.production.piecesPerShift.toLocaleString()} pieces/shift<br><br>
+        Ask me about: labor, packaging, ingredients, pricing, or any specific number.`;
+}
+
+function handleCompare(q) {
+    const ql = q.toLowerCase();
+    const scenarioIds = Object.keys(SCENARIOS).filter(id => 
+        ql.includes(id.toLowerCase()) || ql.includes(SCENARIOS[id].name.toLowerCase().split(' ')[0].toLowerCase())
+    );
+    
+    if (scenarioIds.length < 2) {
+        // Compare all scenarios
+        const rows = Object.entries(SCENARIOS).map(([id, s]) => {
+            const c = calculate(id);
+            return { id, name: s.name, cogs: c.cogs.perUnit, price: c.pricing.sellingPrice, margin: c.pricing.impliedMargin, method: s.pricingMethod };
+        });
+        
+        return `<strong>All Scenarios Comparison:</strong><br><br>
+            <table style="width:100%; font-size:0.8rem;">
+                <tr style="color:#666;"><td>Scenario</td><td>COGS</td><td>Price</td><td>Margin</td><td>Method</td></tr>
+                ${rows.map(r => `<tr><td>${r.name.split(' ')[0]}</td><td>$${r.cogs.toFixed(4)}</td><td>$${r.price.toFixed(4)}</td><td style="color:${r.margin >= 0.3 ? '#10b981' : '#f59e0b'}">${(r.margin*100).toFixed(1)}%</td><td>${r.method}</td></tr>`).join('')}
+            </table>
+            <br>Key difference: CHW/LSL/Dan use <strong>markup</strong> (×1.5), TJPBPBC uses <strong>margin</strong> (÷0.7).`;
+    }
+    
+    // Compare specific scenarios
+    const results = scenarioIds.map(id => ({ id, ...calculate(id) }));
+    return `<strong>Comparing ${results.map(r => r.scenario.name).join(' vs ')}:</strong><br><br>
+        ${results.map(r => `<strong>${r.scenario.name}:</strong><br>
+            COGS: $${r.cogs.perUnit.toFixed(4)}, Price: $${r.pricing.sellingPrice.toFixed(4)}, Margin: ${(r.pricing.impliedMargin*100).toFixed(1)}%`).join('<br><br>')}`;
+}
+
+function handleWhatIf(scenarioId, q) {
+    if (!scenarioId) {
+        return `Which scenario do you want to analyze? Try: "What if CHW price was $0.80?"`;
+    }
+    
+    const c = calculate(scenarioId);
+    const s = c.scenario;
+    
+    // Extract numbers from question
+    const priceMatch = q.match(/\$?([\d.]+)/);
+    const percentMatch = q.match(/([\d.]+)\s*%/);
+    
+    if (priceMatch && /price|sell/i.test(q)) {
+        const newPrice = parseFloat(priceMatch[1]);
+        const newMargin = (newPrice - c.cogs.perUnit) / newPrice;
+        const newMarkup = (newPrice - c.cogs.perUnit) / c.cogs.perUnit;
+        const marginClass = newMargin >= 0.30 ? '#10b981' : newMargin >= 0.20 ? '#f59e0b' : '#ef4444';
+        
+        return `<strong>What if ${s.name} price = $${newPrice.toFixed(2)}?</strong><br><br>
+            Current COGS: $${c.cogs.perUnit.toFixed(4)}<br>
+            New Price: $${newPrice.toFixed(4)}<br>
+            New Margin: <strong style="color:${marginClass}">${(newMargin*100).toFixed(1)}%</strong> (was ${(c.pricing.impliedMargin*100).toFixed(1)}%)<br>
+            New Markup: ${(newMarkup*100).toFixed(1)}%<br>
+            Profit/unit: $${(newPrice - c.cogs.perUnit).toFixed(4)}
+            ${newMargin < 0.25 ? '<br><br>⚠️ Warning: Below 25% margin threshold' : ''}`;
+    }
+    
+    if (percentMatch && /margin/i.test(q)) {
+        const targetMargin = parseFloat(percentMatch[1]) / 100;
+        const newPrice = c.cogs.perUnit / (1 - targetMargin);
+        
+        return `<strong>What if ${s.name} had ${(targetMargin*100).toFixed(0)}% margin?</strong><br><br>
+            COGS: $${c.cogs.perUnit.toFixed(4)}<br>
+            Required Price: <strong>$${newPrice.toFixed(4)}</strong><br>
+            (Currently: $${c.pricing.sellingPrice.toFixed(4)} at ${(c.pricing.impliedMargin*100).toFixed(1)}%)`;
+    }
+    
+    if (percentMatch && /labor|cost/i.test(q)) {
+        const change = parseFloat(percentMatch[1]) / 100;
+        const direction = /increase|up|more|raise/i.test(q) ? 1 : -1;
+        const newLaborCost = c.cogs.labor * (1 + direction * change);
+        const newCogs = newLaborCost + c.cogs.packaging + c.cogs.ingredients;
+        const newPrice = s.pricingMethod === 'margin' ? newCogs / (1 - s.pricingFactor) : newCogs * (1 + s.pricingFactor);
+        
+        return `<strong>What if ${s.name} labor ${direction > 0 ? 'increased' : 'decreased'} ${(change*100).toFixed(0)}%?</strong><br><br>
+            Labor: $${c.cogs.labor.toFixed(4)} → $${newLaborCost.toFixed(4)}<br>
+            New COGS: $${newCogs.toFixed(4)} (was $${c.cogs.perUnit.toFixed(4)})<br>
+            New Price: $${newPrice.toFixed(4)} (was $${c.pricing.sellingPrice.toFixed(4)})`;
+    }
+    
+    return `I can model scenarios like:<br>
+        • "What if ${s.name} price was $X?"<br>
+        • "What if margin was X%?"<br>
+        • "What if labor increased 10%?"`;
+}
+
+function handleWhy(scenarioId, metric, q) {
+    const ql = q.toLowerCase();
+    
+    // Why is output different
+    if (/output|198.?000|31.?500|12.?960/i.test(q)) {
+        if (scenarioId === 'TJPBPBC' || /tj|198/i.test(q)) {
+            const s = SCENARIOS.TJPBPBC;
+            return `<strong>Why TJPBPBC output is 198,000:</strong><br><br>
+                ${s.production.pcPerMold} pc/mold × ${s.production.moldsPerMin} molds/min × 60 min × ${s.production.runHours} hours<br>
+                = <strong>198,000 pieces/shift</strong><br><br>
+                Divided by 19 pc/SUP = <strong>10,421 SUPs</strong><br><br>
+                This is a high-volume Buhler line (10 molds/min) vs CHW's single mold line.`;
+        }
+    }
+    
+    // Why margin is 33%
+    if (/33|margin|markup/i.test(q) && /why/i.test(q)) {
+        return `<strong>Why CHW/LSL/Dan show 33.3% margin:</strong><br><br>
+            The spreadsheet uses <strong>MARKUP</strong> formula labeled as "margin":<br>
+            <code>Selling Price = COGS × (1 + 0.50)</code><br><br>
+            50% markup means:<br>
+            • You add 50% ON TOP of cost<br>
+            • $1.00 COGS → $1.50 price<br>
+            • Profit = $0.50, but that's 33.3% OF THE PRICE<br><br>
+            True 50% margin would need:<br>
+            <code>Price = COGS ÷ (1 - 0.50) = $2.00</code>`;
+    }
+    
+    // Why TJPBPBC is different
+    if (/tjpbpbc|tj|different|30/i.test(q) && scenarioId === 'TJPBPBC') {
+        return `<strong>Why TJPBPBC is different:</strong><br><br>
+            1. Uses TRUE margin: <code>COGS ÷ (1 - 0.30)</code><br>
+            2. Prices per SUP (19-piece bag), not per piece<br>
+            3. Has dual pricing (LMH internal vs TJ's dictated)<br>
+            4. Minor materials added AFTER margin calc<br>
+            5. Full Flavor Studio ingredient breakdown<br><br>
+            It's the most sophisticated of the 4 scenarios.`;
+    }
+    
+    if (scenarioId) {
+        const c = calculate(scenarioId);
+        const s = c.scenario;
+        return `<strong>About ${s.name}:</strong><br><br>
+            Margin: ${(c.pricing.impliedMargin*100).toFixed(1)}% because it uses <strong>${s.pricingMethod}</strong> at ${(s.pricingFactor*100).toFixed(0)}%.<br><br>
+            What specifically would you like explained?`;
+    }
+    
+    return `What would you like me to explain? Try:<br>
+        • "Why is CHW margin 33%?"<br>
+        • "Why is TJPBPBC output 198,000?"<br>
+        • "Why does Dan use BOM costing?"`;
+}
+
+function handleHow(scenarioId, metric, q) {
+    const ql = q.toLowerCase();
+    
+    if (/minor material|pallet|allocated/i.test(q)) {
+        if (scenarioId === 'TJPBPBC' || !scenarioId) {
+            const s = SCENARIOS.TJPBPBC;
+            return `<strong>How minor materials are allocated (TJPBPBC):</strong><br><br>
+                Pallet config: ${s.palletConfig.tiHi} = ${s.palletConfig.cases} cases<br>
+                ${s.palletConfig.cases} cases × 24 SUP = <strong>${s.palletConfig.units} SUP/pallet</strong><br><br>
+                ${s.minorMaterials.map(m => `• ${m.name}: $${m.cost.toFixed(2)} ÷ ${m.divisor} = $${m.perSUP.toFixed(6)}/SUP`).join('<br>')}<br><br>
+                Total: $${s.minorMaterialsPerSUP.toFixed(4)}/SUP<br>
+                Added <strong>after</strong> the margin calculation.`;
+        }
+    }
+    
+    if (/cogs|calculate|cost/i.test(q) && scenarioId) {
+        const c = calculate(scenarioId);
+        return `<strong>How ${c.scenario.name} COGS is calculated:</strong><br><br>
+            Labor: $${c.labor.total.toFixed(2)} ÷ ${c.production.piecesPerShift} = $${c.cogs.labor.toFixed(4)}<br>
+            Packaging: ${c.packaging.items.map(p => `$${p.unitCost}/${p.per}`).join(' + ')} = $${c.cogs.packaging.toFixed(4)}<br>
+            Ingredients: ${c.ingredients.method} = $${c.cogs.ingredients.toFixed(4)}<br><br>
+            <strong>COGS = $${c.cogs.perUnit.toFixed(4)}</strong>`;
+    }
+    
+    return handleExplain(scenarioId, metric, q);
+}
+
+function handleCalculate(scenarioId, metric, q) {
+    // Numbers mentioned in query
+    const numbers = q.match(/\d+\.?\d*/g)?.map(parseFloat) || [];
+    
+    if (/margin.*markup|markup.*margin/i.test(q) && numbers.length > 0) {
+        const val = numbers[0] / 100;
+        if (/margin/i.test(q.split('markup')[0])) {
+            // Margin to markup
+            const markup = val / (1 - val);
+            return `<strong>${(val*100).toFixed(1)}% margin = ${(markup*100).toFixed(1)}% markup</strong><br><br>
+                Formula: markup = margin ÷ (1 - margin)<br>
+                ${(val*100).toFixed(1)}% ÷ (1 - ${val.toFixed(2)}) = ${(markup*100).toFixed(1)}%`;
+        } else {
+            // Markup to margin  
+            const margin = val / (1 + val);
+            return `<strong>${(val*100).toFixed(1)}% markup = ${(margin*100).toFixed(1)}% margin</strong><br><br>
+                Formula: margin = markup ÷ (1 + markup)<br>
+                ${(val*100).toFixed(1)}% ÷ (1 + ${val.toFixed(2)}) = ${(margin*100).toFixed(1)}%`;
+        }
+    }
+    
+    if (scenarioId) {
+        return handleExplain(scenarioId, metric, q);
+    }
+    
+    return `What would you like to calculate? Try:<br>
+        • "Calculate 30% margin to markup"<br>
+        • "What's CHW labor cost?"<br>
+        • "Total COGS for Dan"`;
+}
+
+function handleList(q) {
+    if (/scenario/i.test(q)) {
+        return `<strong>All Scenarios:</strong><br><br>
+            ${Object.entries(SCENARIOS).map(([id, s]) => {
+                const c = calculate(id);
+                return `• <strong>${s.name}</strong> (${s.type}) - $${c.cogs.perUnit.toFixed(4)} COGS, ${(c.pricing.impliedMargin*100).toFixed(1)}% margin`;
+            }).join('<br>')}`;
+    }
+    
+    if (/ingredient/i.test(q)) {
+        return `<strong>Ingredient Library:</strong><br><br>
+            ${INGREDIENTS.map(i => `• ${i.name}: $${i.costPerLb.toFixed(2)}/lb`).join('<br>')}`;
+    }
+    
+    return `I can list:<br>• All scenarios<br>• Ingredients<br>• Labor steps for [scenario]<br>• Packaging for [scenario]`;
+}
+
+function handleDefinition(q) {
+    const definitions = {
+        margin: `<strong>Margin (Gross Margin):</strong><br><br>
+            (Price - Cost) ÷ Price × 100<br><br>
+            Represents profit as a percentage OF THE SELLING PRICE.<br>
+            30% margin means 30¢ of every $1 sale is profit.`,
+        markup: `<strong>Markup:</strong><br><br>
+            (Price - Cost) ÷ Cost × 100<br><br>
+            Represents profit as a percentage OF THE COST.<br>
+            50% markup means you add 50% on top of cost.`,
+        cogs: `<strong>COGS (Cost of Goods Sold):</strong><br><br>
+            Direct costs to produce a product:<br>
+            • Labor<br>
+            • Packaging<br>
+            • Ingredients<br><br>
+            Does NOT include overhead, marketing, or admin costs.`,
+        sup: `<strong>SUP (Stand-Up Pouch):</strong><br><br>
+            A retail bag format, typically 19 pieces per SUP for TJPBPBC.<br>
+            Costs are calculated per SUP, not per piece.`,
+        tihi: `<strong>Ti/Hi (Tie × High):</strong><br><br>
+            Pallet configuration: cases per layer × layers high.<br>
+            Example: 6×7 = 42 cases per pallet.<br>
+            Used to calculate units per pallet for cost allocation.`,
+        bom: `<strong>BOM (Bill of Materials):</strong><br><br>
+            Complete list of ingredients and quantities needed for a recipe.<br>
+            Enables accurate per-unit ingredient costing.`
+    };
+    
+    for (const [term, def] of Object.entries(definitions)) {
+        if (q.toLowerCase().includes(term)) return def;
+    }
+    
+    return `I can define: margin, markup, COGS, SUP, ti/hi, BOM`;
+}
+
+function handleGeneral(scenarioId, q) {
+    // Check if it's a simple greeting
+    if (/^(hi|hello|hey|yo|sup)/i.test(q)) {
+        return `Hey! I'm here to help with pricing questions. What would you like to know about?`;
+    }
+
+    // Ranking queries - most profitable / best margin
+    if (/most profitable|best margin|highest margin|rank.*margin/i.test(q)) {
+        const ranked = Object.keys(SCENARIOS).map(id => ({ id, ...calculate(id) }))
+            .sort((a, b) => b.pricing.impliedMargin - a.pricing.impliedMargin);
+        return `<strong>Scenarios by Margin (highest first):</strong><br>${ranked.map((r, i) =>
+            `${i+1}. ${r.scenario.name.split(' ')[0]}: <strong>${(r.pricing.impliedMargin*100).toFixed(1)}%</strong>`).join('<br>')}`;
+    }
+
+    // Ranking queries - cheapest / lowest COGS
+    if (/cheapest|lowest cogs|lowest cost|cheapest to make/i.test(q)) {
+        const ranked = Object.keys(SCENARIOS).map(id => ({ id, ...calculate(id) }))
+            .sort((a, b) => a.cogs.perUnit - b.cogs.perUnit);
+        return `<strong>Scenarios by COGS (lowest first):</strong><br>${ranked.map((r, i) =>
+            `${i+1}. ${r.scenario.name.split(' ')[0]}: <strong>$${r.cogs.perUnit.toFixed(4)}</strong>/${r.cogs.unit}`).join('<br>')}`;
+    }
+
+    // Ranking queries - highest COGS
+    if (/highest cogs|most expensive|expensive to make/i.test(q)) {
+        const ranked = Object.keys(SCENARIOS).map(id => ({ id, ...calculate(id) }))
+            .sort((a, b) => b.cogs.perUnit - a.cogs.perUnit);
+        return `<strong>Scenarios by COGS (highest first):</strong><br>${ranked.map((r, i) =>
+            `${i+1}. ${r.scenario.name.split(' ')[0]}: <strong>$${r.cogs.perUnit.toFixed(4)}</strong>/${r.cogs.unit}`).join('<br>')}`;
+    }
+
+    // If we have a scenario context, provide info about it
+    if (scenarioId) {
+        return handleExplain(scenarioId, null, q);
+    }
+
+    // Default helpful response
+    return `I can help you understand:<br><br>
+        <strong>Scenarios:</strong> CHW, LSL, Dan, TJPBPBC<br>
+        <strong>Metrics:</strong> COGS, margin, labor, packaging, ingredients<br>
+        <strong>Rankings:</strong> "most profitable", "cheapest to make", "highest cogs"<br>
+        <strong>Analysis:</strong> compare scenarios, what-if modeling<br><br>
+        Try asking naturally, like:<br>
+        • "Break down Dan's costs"<br>
+        • "Most profitable scenario?"<br>
+        • "What if we raised CHW price to $0.80?"`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DUPLICATE & EXPORT SCENARIOS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function duplicateScenario(id) {
+    const original = SCENARIOS[id];
+    const newId = id + '_' + Date.now().toString(36).slice(-4).toUpperCase();
+
+    // Deep clone the scenario
+    SCENARIOS[newId] = JSON.parse(JSON.stringify(original));
+    SCENARIOS[newId].id = newId;
+    SCENARIOS[newId].name = original.name + ' (Copy)';
+
+    debouncedSave();
+    showView('dashboard');
+    addChat('sys', `Duplicated ${original.name} → ${SCENARIOS[newId].name}`);
+}
+
+function deleteScenario(id) {
+    const s = SCENARIOS[id];
+    if (confirm(`Delete "${s.name}"? This cannot be undone.`)) {
+        delete SCENARIOS[id];
+        debouncedSave();
+        showView('dashboard');
+        addChat('sys', `Deleted ${s.name}`);
+    }
+}
+
+// Show export modal (no specific scenario selected from sidebar)
+function showExportModal(scenarioId) {
+    const scenarios = Object.entries(SCENARIOS);
+    if (scenarios.length === 0) {
+        alert('No scenarios to export');
+        return;
+    }
+    // Default to first scenario if none specified
+    const defaultId = scenarioId || scenarios[0][0];
+
+    const modal = document.createElement('div');
+    modal.id = 'exportModal';
+    modal.innerHTML = `
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:1000;animation:fadeIn 0.2s;">
+            <div class="card" style="width:480px;max-height:85vh;overflow:auto;animation:slideUp 0.3s;">
+                <div class="card-head">
+                    <span class="card-title">Export Scenario</span>
+                    <button class="btn btn-sm btn-outline" onclick="document.getElementById('exportModal').remove()">X</button>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Scenario to Export</label>
+                    <select class="form-select" id="expScenario">
+                        ${scenarios.map(([id, s]) => `<option value="${id}" ${id === defaultId ? 'selected' : ''}>${s.name}</option>`).join('')}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Export Type</label>
+                    <select class="form-select" id="expType" onchange="toggleExportOptions()">
+                        <option value="client">Client HTML (Clean, read-only)</option>
+                        <option value="interactive">Interactive HTML (with What-If tools)</option>
+                        <option value="internal">Internal HTML (full details)</option>
+                    </select>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="form-group">
+                    <label class="form-label">Privacy Controls</label>
+                </div>
+                <div class="form-group" style="display:flex;flex-direction:column;gap:0.4rem;">
+                    <label style="font-size:0.8rem;"><input type="checkbox" id="expHideCogs"> Hide COGS breakdown details</label>
+                    <label style="font-size:0.8rem;"><input type="checkbox" id="expHideLabor"> Hide labor breakdown</label>
+                    <label style="font-size:0.8rem;"><input type="checkbox" id="expHideFormula"> Hide pricing formula</label>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="form-group">
+                    <label class="form-label">Visual Options</label>
+                </div>
+                <div class="form-group" style="display:flex;flex-direction:column;gap:0.4rem;">
+                    <label style="font-size:0.8rem;"><input type="checkbox" id="expAnimate" checked> Enable animations</label>
+                    <label style="font-size:0.8rem;"><input type="checkbox" id="expDarkMode" checked> Dark mode theme</label>
+                </div>
+
+                <div class="divider"></div>
+                <button class="btn btn-primary" style="width:100%;" onclick="executeExport()">Generate & Download</button>
+            </div>
+        </div>
+        <style>
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+        </style>
+    `;
+    document.body.appendChild(modal);
+}
+
+function toggleExportOptions() {
+    const type = document.getElementById('expType').value;
+    const hideCogs = document.getElementById('expHideCogs');
+    const hideLabor = document.getElementById('expHideLabor');
+
+    if (type === 'internal') {
+        hideCogs.checked = false;
+        hideLabor.checked = false;
+    } else if (type === 'client') {
+        hideCogs.checked = true;
+        hideLabor.checked = true;
+    }
+}
+
+function executeExport() {
+    const scenarioId = document.getElementById('expScenario').value;
+    const type = document.getElementById('expType').value;
+    const options = {
+        hideCogs: document.getElementById('expHideCogs').checked,
+        hideLabor: document.getElementById('expHideLabor').checked,
+        hideFormula: document.getElementById('expHideFormula').checked,
+        animate: document.getElementById('expAnimate').checked,
+        darkMode: document.getElementById('expDarkMode').checked,
+        interactive: type === 'interactive'
+    };
+
+    document.getElementById('exportModal').remove();
+
+    const s = SCENARIOS[scenarioId];
+    const c = calculate(scenarioId);
+    const html = generateSmartClientHTML(scenarioId, s, c, options);
+    downloadHTML(html, s.name);
+    addChat('sys', `Exported ${s.name} as ${type} HTML`);
+}
+
+function exportScenario(id) {
+    showExportModal(id);
+}
+
+function downloadHTML(html, name) {
+    const blob = new Blob([html], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name.replace(/[^a-z0-9]/gi, '_') + '_Pricing_' + new Date().toISOString().slice(0,10) + '.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function generateSmartClientHTML(id, s, c, options) {
+    const { hideCogs, hideLabor, hideFormula, animate, darkMode, interactive } = options;
+    const marginColor = c.pricing.impliedMargin >= 0.30 ? '#10b981' : c.pricing.impliedMargin >= 0.25 ? '#f59e0b' : '#ef4444';
+
+    const bgColor = darkMode ? '#0a0a12' : '#f8f9fa';
+    const cardBg = darkMode ? '#12121e' : '#ffffff';
+    const textColor = darkMode ? '#e0e0e0' : '#333333';
+    const mutedColor = darkMode ? '#666' : '#888';
+    const borderColor = darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)';
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${s.name} - Pricing Proposal</title>
+    <style>
+        :root { --gold:#d4a84b; --accent:#6366f1; --success:#10b981; --warning:#f59e0b; --danger:#ef4444; }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:system-ui,-apple-system,sans-serif; background:${bgColor}; color:${textColor}; min-height:100vh; padding:2rem; line-height:1.6; }
+        .container { max-width:900px; margin:0 auto; }
+        .header { text-align:center; margin-bottom:2rem; ${animate ? 'animation:fadeIn 0.6s;' : ''} }
+        .logo { font-size:1.8rem; font-weight:700; color:var(--gold); margin-bottom:0.5rem; }
+        .subtitle { color:${mutedColor}; font-size:0.9rem; }
+        .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin-bottom:2rem; }
+        .kpi { background:${cardBg}; border-radius:12px; padding:1.5rem; text-align:center; border:1px solid ${borderColor}; ${animate ? 'animation:fadeUp 0.5s backwards;' : ''} }
+        .kpi:nth-child(1){animation-delay:0.1s} .kpi:nth-child(2){animation-delay:0.2s} .kpi:nth-child(3){animation-delay:0.3s} .kpi:nth-child(4){animation-delay:0.4s}
+        .kpi-label { font-size:0.75rem; color:${mutedColor}; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.5rem; }
+        .kpi-value { font-size:1.75rem; font-weight:700; }
+        .success { color:var(--success); }
+        .warning { color:var(--warning); }
+        .gold { color:var(--gold); }
+        .card { background:${cardBg}; border-radius:12px; padding:1.5rem; margin-bottom:1rem; border:1px solid ${borderColor}; ${animate ? 'animation:fadeIn 0.6s backwards;' : ''} }
+        .card-title { color:var(--gold); font-weight:600; font-size:1rem; margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:1px solid ${borderColor}; }
+        .row { display:flex; justify-content:space-between; padding:0.6rem 0; border-bottom:1px solid ${borderColor}; font-size:0.9rem; }
+        .row:last-child { border:none; }
+        .row.total { font-weight:600; background:${darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'}; margin:0.5rem -1rem; padding:0.75rem 1rem; border-radius:6px; }
+        .grid-2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(350px,1fr)); gap:1rem; }
+        .footer { text-align:center; color:${mutedColor}; font-size:0.75rem; margin-top:2rem; padding-top:1rem; border-top:1px solid ${borderColor}; }
+        ${animate ? '@keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}' : ''}
+        @media print { body{background:#fff;color:#333;} .card{border:1px solid #ddd;} .kpi{break-inside:avoid;} }
+        @media (max-width:768px) { .grid-2{grid-template-columns:1fr;} .kpi-grid{grid-template-columns:repeat(2,1fr);} }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div class="logo">${s.name}</div>
+        <div class="subtitle">Pricing Proposal - ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+    </div>
+
+    <div class="kpi-grid">
+        <div class="kpi">
+            <div class="kpi-label">Unit Price</div>
+            <div class="kpi-value success">$${c.pricing.sellingPrice.toFixed(4)}</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Gross Margin</div>
+            <div class="kpi-value" style="color:${marginColor}">${(c.pricing.impliedMargin*100).toFixed(1)}%</div>
+        </div>
+        <div class="kpi">
+            <div class="kpi-label">Output/Shift</div>
+            <div class="kpi-value gold">${c.production.piecesPerShift.toLocaleString()}</div>
+        </div>
+        ${!hideCogs ? `
+        <div class="kpi">
+            <div class="kpi-label">COGS/Unit</div>
+            <div class="kpi-value warning">$${c.cogs.perUnit.toFixed(4)}</div>
+        </div>
+        ` : ''}
+    </div>
+
+    ${!hideCogs ? `
+    <div class="card">
+        <div class="card-title">Cost Breakdown</div>
+        ${!hideLabor ? `<div class="row"><span>Labor</span><span>$${c.cogs.labor.toFixed(4)} (${(c.cogs.labor/c.cogs.perUnit*100).toFixed(0)}%)</span></div>` : ''}
+        <div class="row"><span>Packaging</span><span>$${c.cogs.packaging.toFixed(4)} (${(c.cogs.packaging/c.cogs.perUnit*100).toFixed(0)}%)</span></div>
+        <div class="row"><span>Ingredients</span><span>$${c.cogs.ingredients.toFixed(4)} (${(c.cogs.ingredients/c.cogs.perUnit*100).toFixed(0)}%)</span></div>
+        <div class="row total"><span>Total COGS / ${c.cogs.unit}</span><span>$${c.cogs.perUnit.toFixed(4)}</span></div>
+    </div>
+    ` : ''}
+
+    ${!hideFormula ? `
+    <div class="card">
+        <div class="card-title">Pricing Method</div>
+        <div class="row"><span>Method</span><span style="font-weight:600;">${s.pricingMethod.toUpperCase()}</span></div>
+        <div class="row"><span>Factor</span><span>${(s.pricingFactor * 100).toFixed(1)}%</span></div>
+        <div class="row"><span>Formula</span><span style="font-family:monospace;">${s.pricingFormula || (s.pricingMethod === 'markup' ? 'COGS x (1 + factor)' : 'COGS / (1 - factor)')}</span></div>
+    </div>
+    ` : ''}
+
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-title">Production Specs</div>
+            <div class="row"><span>Pieces per Mold</span><span>${s.production.pcPerMold}</span></div>
+            <div class="row"><span>Run Hours</span><span>${s.production.runHours}</span></div>
+            <div class="row"><span>oz per Piece</span><span>${s.production.ozPerPiece}</span></div>
+            <div class="row total"><span>Pieces/Shift</span><span>${c.production.piecesPerShift.toLocaleString()}</span></div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Packaging Summary</div>
+            <div class="row"><span>Units per Tray/Case</span><span>${s.units?.perTray || s.units?.perCase || 'N/A'}</span></div>
+            <div class="row"><span>Units per Pallet</span><span>${s.units?.perPallet?.toLocaleString() || 'N/A'}</span></div>
+            <div class="row total"><span>Packaging Cost</span><span>$${c.cogs.packaging.toFixed(4)}</span></div>
+        </div>
+    </div>
+
+    ${interactive ? `
+    <div class="card" style="background:${darkMode ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.05)'};border-color:rgba(99,102,241,0.2);">
+        <div class="card-title" style="color:var(--accent);">What-If Analysis</div>
+        <div style="margin-bottom:1rem;">
+            <label style="display:block;color:${mutedColor};font-size:0.8rem;margin-bottom:0.3rem;">Test Different Price</label>
+            <input type="number" id="testPrice" value="${c.pricing.sellingPrice.toFixed(2)}" step="0.01"
+                   style="width:100%;padding:0.75rem;background:${darkMode ? 'rgba(0,0,0,0.3)' : '#fff'};border:1px solid ${borderColor};border-radius:6px;color:${textColor};font-size:1rem;"
+                   oninput="calcWhatIf()">
+        </div>
+        <div id="whatIfResult"></div>
+    </div>
+    <script>
+    const COGS = ${c.cogs.perUnit};
+    function calcWhatIf() {
+        const price = parseFloat(document.getElementById('testPrice').value) || 0;
+        const margin = price > 0 ? (price - COGS) / price : 0;
+        const profit = price - COGS;
+        const color = margin >= 0.3 ? '#10b981' : margin >= 0.2 ? '#f59e0b' : '#ef4444';
+        document.getElementById('whatIfResult').innerHTML =
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">' +
+            '<div style="padding:1rem;background:${darkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)'};border-radius:6px;text-align:center;">' +
+            '<div style="font-size:0.75rem;color:${mutedColor};text-transform:uppercase;margin-bottom:0.25rem;">Margin</div>' +
+            '<div style="font-size:1.5rem;font-weight:700;color:'+color+'">' + (margin*100).toFixed(1) + '%</div></div>' +
+            '<div style="padding:1rem;background:${darkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)'};border-radius:6px;text-align:center;">' +
+            '<div style="font-size:0.75rem;color:${mutedColor};text-transform:uppercase;margin-bottom:0.25rem;">Profit/Unit</div>' +
+            '<div style="font-size:1.5rem;font-weight:700;color:'+color+'">$' + profit.toFixed(4) + '</div></div></div>';
+    }
+    calcWhatIf();
+    <\/script>
+    ` : ''}
+
+    <div class="footer">
+        Generated by Vosges Pricing Tool v3.5<br>
+        Confidential - For authorized use only
+    </div>
+</div>
+</body>
+</html>`;
+}
+
+// Legacy export function (kept for backward compatibility)
+function generateExportHTML(id, s, c) {
+    const marginClass = c.pricing.impliedMargin >= 0.30 ? '#10b981' : c.pricing.impliedMargin >= 0.25 ? '#f59e0b' : '#ef4444';
+    
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${s.name} - Pricing Analysis</title>
+    <style>
+        :root { --gold: #d4a84b; --accent: #6366f1; --success: #10b981; --warning: #f59e0b; --danger: #ef4444; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a12; color: #e0e0e0; font-size: 14px; line-height: 1.6; padding: 2rem; max-width: 1200px; margin: 0 auto; }
+        h1 { font-size: 1.5rem; color: var(--gold); margin-bottom: 0.5rem; }
+        h2 { font-size: 1rem; color: var(--gold); margin: 1.5rem 0 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; }
+        .meta { font-size: 0.8rem; color: #666; }
+        .tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; margin-right: 0.3rem; }
+        .tag-info { background: rgba(99,102,241,0.15); color: #818cf8; }
+        .tag-success { background: rgba(16,185,129,0.15); color: #10b981; }
+        .tag-purple { background: rgba(139,92,246,0.15); color: #a78bfa; }
+        .card { background: #12121e; border-radius: 10px; padding: 1.25rem; border: 1px solid rgba(255,255,255,0.06); margin-bottom: 1rem; }
+        .grid { display: grid; gap: 1rem; }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
+        .grid-5 { grid-template-columns: repeat(5, 1fr); }
+        .metric { font-size: 1.75rem; font-weight: 700; }
+        .metric-sm { font-size: 1.25rem; font-weight: 700; }
+        .metric-label { font-size: 0.7rem; color: #666; margin-bottom: 0.2rem; }
+        .text-success { color: var(--success); }
+        .text-warning { color: var(--warning); }
+        .text-danger { color: var(--danger); }
+        .text-muted { color: #555; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        th { color: #666; font-weight: 500; font-size: 0.7rem; text-transform: uppercase; }
+        .bkd { display: flex; justify-content: space-between; padding: 0.4rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.9rem; }
+        .bkd:last-child { border-bottom: none; }
+        .bkd.total { font-weight: 600; background: rgba(255,255,255,0.03); margin: 0.5rem -1rem; padding: 0.6rem 1rem; border-radius: 6px; }
+        .formula { font-family: 'Consolas', monospace; background: rgba(0,0,0,0.4); padding: 0.6rem 1rem; border-radius: 6px; font-size: 0.9rem; margin: 0.5rem 0; }
+        .result { background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.03)); border: 1px solid rgba(16,185,129,0.2); border-radius: 8px; padding: 1rem; }
+        .warn-box { background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(245,158,11,0.03)); border: 1px solid rgba(245,158,11,0.2); border-radius: 8px; padding: 1rem; }
+        .divider { height: 1px; background: rgba(255,255,255,0.06); margin: 1rem 0; }
+        .footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); font-size: 0.75rem; color: #444; text-align: center; }
+        @media print { body { background: white; color: #333; } .card { border: 1px solid #ddd; } }
+        @media (max-width: 768px) { .grid-4, .grid-5 { grid-template-columns: repeat(2, 1fr); } .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>${s.name}</h1>
+            <div style="margin-top:0.5rem;">
+                <span class="tag tag-${s.pricingMethod === 'margin' ? 'success' : 'info'}">${s.pricingMethod} pricing</span>
+                <span class="tag tag-purple">${s.type} product</span>
+                <span class="tag">${s.ingredientMethod} costing</span>
+            </div>
+        </div>
+        <div class="meta">
+            Generated: ${new Date().toLocaleDateString()}<br>
+            Vosges Haut-Chocolat
+        </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="grid grid-5">
+        <div class="card" style="text-align:center;">
+            <div class="metric-label">COGS / ${c.cogs.unit}</div>
+            <div class="metric-sm text-warning">$${c.cogs.perUnit.toFixed(4)}</div>
+        </div>
+        <div class="card" style="text-align:center;">
+            <div class="metric-label">Selling Price</div>
+            <div class="metric-sm text-success">$${c.pricing.sellingPrice.toFixed(4)}</div>
+        </div>
+        <div class="card" style="text-align:center;">
+            <div class="metric-label">Gross Margin</div>
+            <div class="metric-sm" style="color:${marginClass}">${(c.pricing.impliedMargin*100).toFixed(1)}%</div>
+        </div>
+        <div class="card" style="text-align:center;">
+            <div class="metric-label">Markup</div>
+            <div class="metric-sm">${(c.pricing.impliedMarkup*100).toFixed(1)}%</div>
+        </div>
+        <div class="card" style="text-align:center;">
+            <div class="metric-label">Final Price</div>
+            <div class="metric-sm text-success">$${c.pricing.finalPrice.toFixed(4)}</div>
+        </div>
+    </div>
+
+    <div class="grid grid-2">
+        <!-- COGS Breakdown -->
+        <div class="card">
+            <h2 style="margin-top:0;">💰 COGS Breakdown</h2>
+            <div class="bkd"><span>Labor</span><span>$${c.cogs.labor.toFixed(4)} <span class="text-muted">(${(c.cogs.labor/c.cogs.perUnit*100).toFixed(1)}%)</span></span></div>
+            <div class="bkd"><span>Packaging</span><span>$${c.cogs.packaging.toFixed(4)} <span class="text-muted">(${(c.cogs.packaging/c.cogs.perUnit*100).toFixed(1)}%)</span></span></div>
+            <div class="bkd"><span>Ingredients</span><span>$${c.cogs.ingredients.toFixed(4)} <span class="text-muted">(${(c.cogs.ingredients/c.cogs.perUnit*100).toFixed(1)}%)</span></span></div>
+            <div class="bkd total"><span>Total COGS / ${c.cogs.unit}</span><span>$${c.cogs.perUnit.toFixed(4)}</span></div>
+            ${s.minorMaterialsAddedToPrice && c.minorMaterials.items.length > 0 ? `
+                <div class="divider"></div>
+                <div style="font-size:0.8rem; color:#666; margin-bottom:0.4rem;">Minor materials (added after pricing):</div>
+                ${c.minorMaterials.items.map(m => `<div class="bkd"><span style="padding-left:1rem;">${m.name}</span><span>$${(m.perSUP || m.perPiece || m.cost).toFixed(4)}</span></div>`).join('')}
+                <div class="bkd" style="font-weight:600; color:var(--gold);"><span>Final Price</span><span>$${c.pricing.finalPrice.toFixed(4)}</span></div>
+            ` : ''}
+        </div>
+
+        <!-- Pricing -->
+        <div class="card">
+            <h2 style="margin-top:0;">📐 Pricing Formula</h2>
+            ${s.pricingMethod === 'markup' ? `
+                <div class="warn-box">
+                    <div style="font-size:0.85rem; margin-bottom:0.5rem;"><strong>MARKUP</strong> Method</div>
+                    <div class="formula">${s.pricingFormula}</div>
+                    <div class="formula">$${c.pricing.sellingPrice.toFixed(4)} = $${c.cogs.perUnit.toFixed(4)} × ${(1 + s.pricingFactor).toFixed(2)}</div>
+                </div>
+            ` : `
+                <div class="result">
+                    <div style="font-size:0.85rem; margin-bottom:0.5rem;"><strong>MARGIN</strong> Method</div>
+                    <div class="formula">${s.pricingFormula}</div>
+                    <div class="formula">$${c.pricing.sellingPrice.toFixed(4)} = $${c.cogs.perUnit.toFixed(4)} ÷ ${(1 - s.pricingFactor).toFixed(2)}</div>
+                </div>
+            `}
+            ${s.customerPricing ? `
+                <div class="divider"></div>
+                <h2 style="margin-top:0;">🏪 ${s.customerPricing.name}</h2>
+                <div class="bkd"><span>Dictated Price</span><span><strong>$${s.customerPricing.dictatedPrice.toFixed(2)}</strong></span></div>
+                <div class="bkd"><span>Target Margin</span><span>${(s.customerPricing.targetMargin*100).toFixed(1)}%</span></div>
+                <div class="bkd"><span>Actual Margin</span><span style="color:${s.customerPricing.actualMargin >= s.customerPricing.targetMargin ? 'var(--success)' : 'var(--danger)'}">${(s.customerPricing.actualMargin*100).toFixed(1)}%</span></div>
+            ` : ''}
+        </div>
+    </div>
+
+    <div class="grid grid-2">
+        <!-- Labor -->
+        <div class="card">
+            <h2 style="margin-top:0;">👷 Labor ($${c.labor.total.toFixed(2)} total)</h2>
+            <table>
+                <thead><tr><th>Step</th><th>People</th><th>Hours</th><th>Rate</th><th>Cost</th></tr></thead>
+                <tbody>
+                    ${c.labor.steps.filter(l => l.people > 0).map(l => `
+                        <tr><td>${l.name}</td><td>${l.people}</td><td>${l.hours}</td><td>$${l.rate}</td><td>$${l.cost.toFixed(2)}</td></tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div class="bkd" style="margin-top:0.75rem; font-weight:600; color:var(--gold);"><span>Labor / ${c.labor.unit}</span><span>$${c.labor.perUnit.toFixed(4)}</span></div>
+        </div>
+
+        <!-- Production -->
+        <div class="card">
+            <h2 style="margin-top:0;">⚙️ Production Parameters</h2>
+            <div class="bkd"><span>Pieces per Mold</span><span>${s.production.pcPerMold}</span></div>
+            <div class="bkd"><span>Molds per Minute</span><span>${s.production.moldsPerMin}</span></div>
+            <div class="bkd"><span>Run Hours</span><span>${s.production.runHours}</span></div>
+            <div class="bkd"><span>oz per Piece</span><span>${s.production.ozPerPiece}</span></div>
+            <div class="divider"></div>
+            <div class="bkd"><span>Pieces per Shift</span><span><strong>${c.production.piecesPerShift.toLocaleString()}</strong></span></div>
+            <div class="bkd"><span>Total Lbs</span><span>${c.production.totalLbs.toFixed(2)}</span></div>
+            ${s.type === 'sup' ? `<div class="bkd"><span>SUPs per Shift</span><span><strong>${Math.round(c.production.supsPerShift).toLocaleString()}</strong></span></div>` : ''}
+        </div>
+    </div>
+
+    <!-- Packaging -->
+    <div class="card">
+        <h2 style="margin-top:0;">📦 Packaging</h2>
+        <table>
+            <thead><tr><th>Item</th><th>Unit Cost</th><th>Per</th><th>Divisor</th><th>Cost/${c.cogs.unit}</th></tr></thead>
+            <tbody>
+                ${s.packaging.map(p => {
+                    const perUnit = p.divisor ? (p.unitCost / p.divisor) : (p.perSUP || p.unitCost);
+                    return `<tr><td>${p.name}</td><td>$${p.unitCost.toFixed(4)}</td><td>${p.per || 'unit'}</td><td>${p.divisor || 1}</td><td>$${perUnit.toFixed(6)}</td></tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+        <div class="bkd" style="margin-top:0.75rem; font-weight:600; color:var(--gold);"><span>Total Packaging / ${c.cogs.unit}</span><span>$${c.packaging.perUnit.toFixed(4)}</span></div>
+    </div>
+
+    ${s.palletConfig ? `
+    <div class="card">
+        <h2 style="margin-top:0;">🎨 Pallet Configuration</h2>
+        <div class="grid grid-4">
+            <div class="bkd"><span>Ti × Hi</span><span>${s.palletConfig.tiHi || 'N/A'}</span></div>
+            <div class="bkd"><span>Cases/Pallet</span><span>${s.palletConfig.cases || 'N/A'}</span></div>
+            <div class="bkd"><span>Units/Pallet</span><span>${s.palletConfig.units || s.units?.perPallet || 'N/A'}</span></div>
+            <div class="bkd"><span>Pallets/Day</span><span>${s.palletConfig.palletsPerDay?.toFixed(1) || c.production.palletsPerDay?.toFixed(1) || 'N/A'}</span></div>
+        </div>
+    </div>
+    ` : ''}
+
+    <div class="footer">
+        This document is confidential and intended for internal pricing analysis only.<br>
+        Generated by Vosges B2B Pricing Tool v3.3
+    </div>
+</body>
+</html>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VIEW SWITCHING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function showView(name) {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.view === name));
+    
+    const views = {
+        dashboard: renderDashboard,
+        auditReport: renderAuditReport,
+        marginCalc: renderMarginCalc,
+        uploadBOM: renderUploadBOM,
+        uploadFlavor: renderUploadFlavor,
+        uploadCosts: renderUploadCosts,
+        ingredientLib: renderIngredientLib,
+        laborConfig: renderLaborConfig,
+        packagingConfig: renderPackagingConfig,
+        palletConfig: renderPalletConfig,
+        goalSolver: renderGoalSolver,
+        newScenario: renderNewScenario
+    };
+    
+    document.getElementById('mainContent').innerHTML = (views[name] || renderDashboard)();
+    
+    if (name === 'marginCalc') setTimeout(() => { calcM1(); calcM2(); }, 50);
+    if (name === 'goalSolver') setTimeout(() => { calcGoal(); calcTargetPrice(); }, 50);
+}
+
+// Init - async cloud loading with localStorage fallback
+(async function init() {
+    // Try cloud first, fall back to localStorage
+    const cloudLoaded = await loadFromCloud();
+    if (!cloudLoaded) {
+        loadFromLocalStorage();
+    }
+
+    // Update UI
+    updateSyncIndicator();
+    document.querySelectorAll('.nav-item').forEach(i =>
+        i.addEventListener('click', () => i.dataset.view && showView(i.dataset.view))
+    );
+    showView('dashboard');
+
+    // Show initial status in chat
+    if (cloudStatus === 'offline') {
+        addChat('sys', '💾 Offline mode - using local data');
+    } else if (Object.keys(SCENARIOS).length > 0) {
+        addChat('sys', `☁️ Loaded ${Object.keys(SCENARIOS).length} scenarios from cloud`);
+    }
+})();
+</script>
+</body>
+</html>
